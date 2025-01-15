@@ -1,4 +1,4 @@
-from bigquery_functions import query_vectors
+from bigquery_functions import bigquery_vector_request, get_site_id_of_drive_id, get_drives_ids_of_site_id
 
 from flask import Flask, request, jsonify
 
@@ -13,7 +13,7 @@ def analyze_sharepoint():
   body_json = request.get_json(silent=True)
 
   #Check mandatory parameters
-  mandatory_parameters_list = ['action', 'request_id', 'user_id', 'timestamp', 'query', 'selected_libraries']
+  mandatory_parameters_list = ['action', 'request_id', 'user_id', 'timestamp', 'query']
   for parameter_name in mandatory_parameters_list:
     if parameter_name not in body_json:
        return jsonify({
@@ -25,17 +25,41 @@ def analyze_sharepoint():
       "error": "Bad Request",
       "message": "Action forbidden"
         }), 400
+  
+  #Text to find
+  text_to_find = body_json['query']
 
-  #TODO: Anadir busqueda si no se especifica el site_id
 
   #Main execution
   try:
 
-    site_id = 'bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d'
-    drive_id = body_json['selected_libraries'][0]
-    text_to_find = body_json['query']
-    
-    vector_results = query_vectors(site_id, drive_id,text_to_find)
+    #List of places to find in
+    drives_to_find = []
+
+    # PROCESS LIST OF DRIVE
+    if 'selected_libraries' in body_json:
+      for drive_id in body_json['selected_libraries']:
+        # Get site of library
+        site_id = get_site_id_of_drive_id(drive_id)
+
+        drives_to_find.append({ 'site_id':site_id, 'drive_id': drive_id })
+
+    # PROCESS LIST OF SITES
+    if 'selected_sites' in body_json:
+      for site_id in body_json['selected_sites']:
+        # Get list of drives
+        drives_list = get_drives_ids_of_site_id(site_id)
+
+        #Add each drive
+        for drive_id in drives_list:
+          drives_to_find.append({ 'site_id':site_id, 'drive_id': drive_id })
+
+
+    #FIND FOR EACH DRIVE
+    vector_results = []
+    for drive_obj in drives_to_find:
+      drive_results = bigquery_vector_request(drive_obj['site_id'], drive_obj['drive_id'],text_to_find)
+      vector_results.append(drive_results)
 
     return jsonify(vector_results),200
 
@@ -47,9 +71,6 @@ def analyze_sharepoint():
             "error": "Database Error",
             "message": "An error occurred while accessing the database."
     }), 500
-     
-    
-  return 'OK', 200
 
 if __name__ == "__main__":
     app.run(host="localhost", port=8080, debug=False)
