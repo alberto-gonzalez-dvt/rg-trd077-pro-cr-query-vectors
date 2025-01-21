@@ -32,6 +32,8 @@ def get_site_id_of_drive_id(drive_id):
   try:
     query_job = bigqueryClient.query(query)  # Execute the query
 
+    #TODO: Tirar error si hay 0 rows o mas de 1
+
     #Return site_id of first row
     for row in query_job:
       return row['site_id']
@@ -39,7 +41,28 @@ def get_site_id_of_drive_id(drive_id):
   except Exception as e:
     logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
     raise Exception(f"Error doing get_site_id_of_drive_id {e}")
+  
+def get_site_id_of_drive_url(drive_url):
 
+  query = f"""
+  SELECT site_id, drive_id
+  FROM `rg-trd077-pro.configuration_details.sites_and_drives` 
+  WHERE drive_web_url = '{drive_url}'
+  """
+
+  try:
+    query_job = bigqueryClient.query(query)  # Execute the query
+
+    #TODO: Tirar error si hay 0 rows o mas de 1
+
+    #Return site_id of first row
+    for row in query_job:
+      return row['site_id'], row['drive_id']
+
+  except Exception as e:
+    logging.error(f"Error doing get_site_id_of_drive_url {e}", exc_info=True)
+    raise Exception(f"Error doing get_site_id_of_drive_url {e}")
+  
 def get_drives_ids_of_site_id(site_id):
   
   query = f"""
@@ -60,6 +83,28 @@ def get_drives_ids_of_site_id(site_id):
     logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
     raise Exception(f"Error doing get_site_id_of_drive_id {e}")
 
+def get_drives_ids_of_site_url(site_url):
+
+  query = f"""
+  SELECT site_id,drive_id 
+  FROM `rg-trd077-pro.configuration_details.sites_and_drives` 
+  WHERE site_web_url = '{site_url}'
+  """
+
+  try:
+    query_job = bigqueryClient.query(query)  # Execute the query
+
+    drives_list = []
+    for row in query_job:
+      drives_list.append({'drive_id':row['drive_id'],'site_id':row['site_id']})
+    return drives_list
+  
+  except Exception as e:
+    logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
+    raise Exception(f"Error doing get_site_id_of_drive_id {e}")
+
+
+
 
 def bigquery_vector_request(site_id, drive_id, text_to_find):
     
@@ -67,7 +112,20 @@ def bigquery_vector_request(site_id, drive_id, text_to_find):
 
       
   query = f"""
-  SELECT query.query, base.text, base.sp_file_extension, distance
+  SELECT 
+    query.query, 
+    base.text, 
+    base.sp_file_extension, 
+    base.webUrl, 
+    base.file_name, 
+    base.drive_name,
+    base.trace_timestamp,
+    base.sp_file_size,
+    base.file_id,
+    base.drive_path,
+    base.sp_file_created_date_time,
+    base.sp_file_last_modified_date_time,
+    distance
   FROM VECTOR_SEARCH(
     TABLE `{project_id}.{site_id_bq}.{drive_id_bq}`, 'embeddings',
     (
@@ -87,12 +145,37 @@ def bigquery_vector_request(site_id, drive_id, text_to_find):
       
       output_object = {}
       
-      output_object['key'] = ''
-      output_object['text'] = row['text']
+      output_object['content'] = row['text']
       output_object['score'] = row['distance']
       output_object['file_extension'] = row['sp_file_extension']
+      output_object['file_url'] = row['webUrl']
+      output_object['file_name'] = row['file_name']
       output_object['library_id'] = drive_id
       output_object['site_id'] = site_id
+      output_object['library_name'] = row['drive_name']
+      output_object['library_upload_date']= row['trace_timestamp']
+      output_object['file_size'] = row['sp_file_size']
+      output_object[''] = row['file_id']
+      output_object['library_url'] = row['drive_path']
+      output_object['file_creation_date'] = row['sp_file_created_date_time']
+      output_object['file_modification_date'] = row['sp_file_last_modified_date_time']
+  
+      source = {
+        'source': row['webUrl']
+      }
+      output_object['metadata'] = source
+
+
+
+      #library_category
+      #file_num_pages
+      #chunk_language
+      #chunk_key_phrases
+      #file_author
+      #file_title
+      #chunk_entities
+
+
       
 
       nears_list.append(output_object)

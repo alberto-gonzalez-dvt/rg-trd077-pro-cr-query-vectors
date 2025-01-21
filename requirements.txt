@@ -6,3 +6,6 @@ gunicorn==21.2.0
 
 google-cloud-bigquery==3.27.0
 google-cloud-logging==3.11.3
+
+langchain==0.3.14
+langchain-google-vertexai==2.0.11

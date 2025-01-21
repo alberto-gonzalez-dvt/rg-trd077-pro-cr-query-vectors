@@ -1,4 +1,5 @@
-from bigquery_functions import bigquery_vector_request, get_site_id_of_drive_id, get_drives_ids_of_site_id
+from bigquery_functions import bigquery_vector_request, get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url
+from gemini import generate_answer
 
 from flask import Flask, request, jsonify
 
@@ -36,17 +37,27 @@ def analyze_sharepoint():
     #List of places to find in
     drives_to_find = []
 
-    # PROCESS LIST OF DRIVE
-    if 'selected_libraries' in body_json:
-      for drive_id in body_json['selected_libraries']:
+    #TODO: Unificar para que todos los metodos devuelvan tanto site_id como drive_id para que sea más directo el append y en todos los casos igual
+
+    # PROCESS A DRIVE_ID
+    if 'selected_libraries_ids' in body_json:
+      for drive_id in body_json['selected_libraries_ids']:
         # Get site of library
         site_id = get_site_id_of_drive_id(drive_id)
-
         drives_to_find.append({ 'site_id':site_id, 'drive_id': drive_id })
 
-    # PROCESS LIST OF SITES
-    if 'selected_sites' in body_json:
-      for site_id in body_json['selected_sites']:
+    # PROCESS A DRIVE_URL
+    if 'selected_libraries_urls' in body_json:
+      for drive_url in body_json['selected_libraries_urls']:
+        # Get site_id and drive_id
+        site_id, drive_id = get_site_id_of_drive_url(drive_url)
+        drives_to_find.append({ 'site_id':site_id, 'drive_id': drive_id })
+
+    ###
+
+    # PROCESS LIST OF SITES_IDS
+    if 'selected_sites_ids' in body_json:
+      for site_id in body_json['selected_sites_ids']:
         # Get list of drives
         drives_list = get_drives_ids_of_site_id(site_id)
 
@@ -54,14 +65,45 @@ def analyze_sharepoint():
         for drive_id in drives_list:
           drives_to_find.append({ 'site_id':site_id, 'drive_id': drive_id })
 
+    # PROCESS LIST OF SITES
+    if 'selected_sites_urls' in body_json:
+      for site_url in body_json['selected_sites_urls']:
+        # Get list of drives
+        drives_list = get_drives_ids_of_site_url(site_url)
+
+        #Add each drive
+        for drive_item in drives_list:
+          drives_to_find.append({ 'site_id':drive_item['site_id'], 'drive_id': drive_item['drive_id'] })
+
+    # FINAL OUTPUT
+    final_output = {}
 
     #FIND FOR EACH DRIVE
-    vector_results = []
+    seach_answer = []
     for drive_obj in drives_to_find:
       drive_results = bigquery_vector_request(drive_obj['site_id'], drive_obj['drive_id'],text_to_find)
-      vector_results.append(drive_results)
 
-    return jsonify(vector_results),200
+      #Add user_id to all items
+      for drive_result in drive_results:
+        drive_result['user_id'] = body_json['user_id']
+
+      seach_answer.append(drive_results)
+
+    #If user wants to generate semantic answer must select generate_semantic_answer
+    semantic_answer = ''
+    if 'generate_semantic_answer' in body_json and body_json['generate_semantic_answer'] == True:
+      
+      #Context are the texts of the elements found
+      contexts = []
+
+      for drive_result in drive_results:
+        contexts.append(drive_result['content'])
+
+      final_output['semantic_answer'] = generate_answer(body_json['query'], contexts)
+
+    final_output['search_answer'] = seach_answer
+
+    return jsonify(final_output),200
 
   except:
     error_trace = traceback.format_exc()
