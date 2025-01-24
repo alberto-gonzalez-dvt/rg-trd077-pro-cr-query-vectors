@@ -132,7 +132,7 @@ def bigquery_vector_request(site_id, drive_id, text_to_find):
       SELECT ml_generate_embedding_result, content AS query
       FROM ML.GENERATE_EMBEDDING(
         MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
-          (SELECT '{text_to_find}' AS content))
+          (SELECT " {text_to_find}" AS content))
     ),
     top_k => 5)
   """

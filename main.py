@@ -29,6 +29,8 @@ def analyze_sharepoint():
   
   #Text to find
   text_to_find = body_json['query']
+  # replace double quotes to avoid problems in query definition
+  text_to_find = text_to_find.replace('"','')
 
 
   #Main execution
