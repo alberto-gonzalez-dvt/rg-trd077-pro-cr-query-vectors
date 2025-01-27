@@ -45,14 +45,22 @@ def analyze_sharepoint():
     if 'selected_libraries_ids' in body_json:
       for drive_id in body_json['selected_libraries_ids']:
         # Get site of library
-        site_id = get_site_id_of_drive_id(drive_id)
+        try:
+          site_id = get_site_id_of_drive_id(drive_id)
+        except:
+          print("ERROR IN DRIVE_ID")
+          return "ERROR IN DRIVE_ID",500
         drives_to_find.append({ 'site_id':site_id, 'drive_id': drive_id })
 
     # PROCESS A DRIVE_URL
     if 'selected_libraries_urls' in body_json:
       for drive_url in body_json['selected_libraries_urls']:
         # Get site_id and drive_id
-        site_id, drive_id = get_site_id_of_drive_url(drive_url)
+        try:
+          site_id, drive_id = get_site_id_of_drive_url(drive_url)
+        except:
+          print("ERROR IN DRIVE_URL")
+          return "ERROR IN DRIVE_URL",500
         drives_to_find.append({ 'site_id':site_id, 'drive_id': drive_id })
 
     ###
@@ -61,7 +69,11 @@ def analyze_sharepoint():
     if 'selected_sites_ids' in body_json:
       for site_id in body_json['selected_sites_ids']:
         # Get list of drives
-        drives_list = get_drives_ids_of_site_id(site_id)
+        try:
+          drives_list = get_drives_ids_of_site_id(site_id)
+        except:
+          print("ERROR IN SITE_ID")
+          return "ERROR IN SITE_ID",500
 
         #Add each drive
         for drive_id in drives_list:
@@ -71,7 +83,11 @@ def analyze_sharepoint():
     if 'selected_sites_urls' in body_json:
       for site_url in body_json['selected_sites_urls']:
         # Get list of drives
-        drives_list = get_drives_ids_of_site_url(site_url)
+        try:
+          drives_list = get_drives_ids_of_site_url(site_url)
+        except:
+          print("ERROR IN SITE_URL")
+          return "ERROR IN SITE_URL",500
 
         #Add each drive
         for drive_item in drives_list:
@@ -89,19 +105,23 @@ def analyze_sharepoint():
       for drive_result in drive_results:
         drive_result['user_id'] = body_json['user_id']
 
-      seach_answer.append(drive_results)
+      #seach_answer.append(drive_results)
+      seach_answer.extend(drive_results)
+    
+    # Lo primero de todo, ordenamos los contextos encontrados por score para luego poder quedarnos solo con los 5 de mejor
+    # puntuación
+    drive_results_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=True)
 
     #If user wants to generate semantic answer must select generate_semantic_answer
     semantic_answer = ''
     if 'generate_semantic_answer' in body_json and body_json['generate_semantic_answer'] == True:
-      
       #Context are the texts of the elements found
       contexts = []
 
-      for drive_result in drive_results:
+      for drive_result in drive_results_ordered:
         contexts.append(drive_result['content'])
 
-      final_output['semantic_answer'] = generate_answer(body_json['query'], contexts)
+      final_output['semantic_answer'] = generate_answer(body_json['query'], contexts[:5])#Le pasamos solo los 5 con mejor score
 
     final_output['search_answer'] = seach_answer
 

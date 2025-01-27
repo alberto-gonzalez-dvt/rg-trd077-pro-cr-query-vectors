@@ -33,10 +33,15 @@ def get_site_id_of_drive_id(drive_id):
     query_job = bigqueryClient.query(query)  # Execute the query
 
     #TODO: Tirar error si hay 0 rows o mas de 1
-
-    #Return site_id of first row
-    for row in query_job:
-      return row['site_id']
+    df = query_job.to_dataframe()
+    if len(df)==0 or len(df)>1:
+      print("ERROR AL INDICAR EL NOMBRE DEL DRIVE URL")
+      logging.error(f"Error in drive url name:", exc_info=True)
+      raise Exception(f"Error in drive url name:") 
+    else:
+      #Return site_id of first row
+      for row in query_job:
+        return row['site_id']
 
   except Exception as e:
     logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
@@ -54,10 +59,16 @@ def get_site_id_of_drive_url(drive_url):
     query_job = bigqueryClient.query(query)  # Execute the query
 
     #TODO: Tirar error si hay 0 rows o mas de 1
+    df = query_job.to_dataframe()
+    if len(df)==0 or len(df)>1:
+      print("ERROR AL INDICAR EL NOMBRE DEL DRIVE URL")
+      logging.error(f"Error in drive url name:", exc_info=True)
+      raise Exception(f"Error in drive url name")
+    else:
+      #Return site_id of first row
+      for row in query_job:
+        return row['site_id'], row['drive_id']
 
-    #Return site_id of first row
-    for row in query_job:
-      return row['site_id'], row['drive_id']
 
   except Exception as e:
     logging.error(f"Error doing get_site_id_of_drive_url {e}", exc_info=True)
@@ -77,6 +88,7 @@ def get_drives_ids_of_site_id(site_id):
     drives_list = []
     for row in query_job:
       drives_list.append(row['drive_id'])
+    print(drives_list)
     return drives_list
   
   except Exception as e:
@@ -97,6 +109,7 @@ def get_drives_ids_of_site_url(site_url):
     drives_list = []
     for row in query_job:
       drives_list.append({'drive_id':row['drive_id'],'site_id':row['site_id']})
+    print(drives_list)
     return drives_list
   
   except Exception as e:
