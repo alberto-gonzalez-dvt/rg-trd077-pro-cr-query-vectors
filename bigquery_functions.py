@@ -88,7 +88,6 @@ def get_drives_ids_of_site_id(site_id):
     drives_list = []
     for row in query_job:
       drives_list.append(row['drive_id'])
-    print(drives_list)
     return drives_list
   
   except Exception as e:
@@ -109,7 +108,6 @@ def get_drives_ids_of_site_url(site_url):
     drives_list = []
     for row in query_job:
       drives_list.append({'drive_id':row['drive_id'],'site_id':row['site_id']})
-    print(drives_list)
     return drives_list
   
   except Exception as e:
