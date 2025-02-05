@@ -32,13 +32,14 @@ def analyze_sharepoint():
   # replace double quotes to avoid problems in query definition
   text_to_find = text_to_find.replace('"','')
 
-
+  
   #Main execution
   try:
 
+    
     #List of places to find in
     drives_to_find = []
-
+    
     #TODO: Unificar para que todos los metodos devuelvan tanto site_id como drive_id para que sea más directo el append y en todos los casos igual
 
     # PROCESS A DRIVE_ID
@@ -92,7 +93,7 @@ def analyze_sharepoint():
         #Add each drive
         for drive_item in drives_list:
           drives_to_find.append({ 'site_id':drive_item['site_id'], 'drive_id': drive_item['drive_id'] })
-
+    
     # FINAL OUTPUT
     final_output = {}
 
@@ -110,7 +111,7 @@ def analyze_sharepoint():
     
     # Lo primero de todo, ordenamos los contextos encontrados por score para luego poder quedarnos solo con los 5 de mejor
     # puntuación
-    drive_results_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=True)
+    drive_results_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=False) #reverse=False->cosine
 
     #If user wants to generate semantic answer must select generate_semantic_answer
     semantic_answer = ''
@@ -120,6 +121,8 @@ def analyze_sharepoint():
 
       for drive_result in drive_results_ordered:
         contexts.append(drive_result['content'])
+      #for drive_result in drive_results:
+      #  contexts.append(drive_result['content'])
 
       final_output['semantic_answer'] = generate_answer(body_json['query'], contexts[:5])#Le pasamos solo los 5 con mejor score
 
