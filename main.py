@@ -1,5 +1,7 @@
 from bigquery_functions import bigquery_vector_request, get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url
 from gemini import generate_answer
+from langchain_google_community.vertex_rank import VertexAIRank
+from langchain.schema import Document
 
 from flask import Flask, request, jsonify
 
@@ -96,7 +98,7 @@ def analyze_sharepoint():
     
     # FINAL OUTPUT
     final_output = {}
-
+    
     #FIND FOR EACH DRIVE
     seach_answer = []
     for drive_obj in drives_to_find:
@@ -109,9 +111,42 @@ def analyze_sharepoint():
       #seach_answer.append(drive_results)
       seach_answer.extend(drive_results)
     
-    # Lo primero de todo, ordenamos los contextos encontrados por score para luego poder quedarnos solo con los 5 de mejor
-    # puntuación
-    drive_results_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=False) #reverse=False->cosine
+    # Instantiate the VertexAIReranker with the SDK manager
+    reranker = VertexAIRank(project_id="rg-trd077-pro",
+                            location_id="europe-west1",
+                            model="semantic-ranker-512-003",   # available models --> https://cloud.google.com/generative-ai-app-builder/docs/ranking#rank_or_rerank_a_set_of_records_according_to_a_query
+                            ranking_config="default_ranking_config",
+                            title_field="source",
+                            top_n=5,
+                          )
+    drive_docs=[]
+    # Convert dict to Document
+    for i in seach_answer:
+      drive_docs.append(Document(page_content=i["content"], metadata={"source":i["file_name"]}))
+
+    # rerank de contextos
+    reranked_docs = reranker._rerank_documents(query=text_to_find, documents=drive_docs)
+    context_output=[]
+    for i in reranked_docs:
+      context_output.append({
+                             'content': i.page_content, 
+                             'score': seach_answer[int(i.metadata['id'])]['score'], 
+                             'file_extension': seach_answer[int(i.metadata['id'])]['file_extension'],
+                             'file_url': seach_answer[int(i.metadata['id'])]['file_url'],
+                             "file_name": seach_answer[int(i.metadata['id'])]['file_name'], 
+                             'library_id': seach_answer[int(i.metadata['id'])]['library_id'],
+                             'site_id': seach_answer[int(i.metadata['id'])]['site_id'],
+                             'user_id': seach_answer[int(i.metadata['id'])]['user_id'],
+                             'library_name': seach_answer[int(i.metadata['id'])]['library_name'],
+                             'library_upload_date': seach_answer[int(i.metadata['id'])]['library_upload_date'],
+                             'file_size': seach_answer[int(i.metadata['id'])]['file_size'],
+                             'library_url': seach_answer[int(i.metadata['id'])]['library_url'],
+                             'file_creation_date': seach_answer[int(i.metadata['id'])]['file_creation_date'],
+                             'file_modification_date': seach_answer[int(i.metadata['id'])]['file_modification_date'],
+                             'metadata': seach_answer[int(i.metadata['id'])]['metadata']
+                             })
+
+    
 
     #If user wants to generate semantic answer must select generate_semantic_answer
     semantic_answer = ''
@@ -119,14 +154,13 @@ def analyze_sharepoint():
       #Context are the texts of the elements found
       contexts = []
 
-      for drive_result in drive_results_ordered:
-        contexts.append(drive_result['content'])
-      #for drive_result in drive_results:
-      #  contexts.append(drive_result['content'])
+
+      for drive_result in reranked_docs:
+        contexts.append(drive_result.page_content)
 
       final_output['semantic_answer'] = generate_answer(body_json['query'], contexts[:5])#Le pasamos solo los 5 con mejor score
 
-    final_output['search_answer'] = seach_answer
+    final_output['search_answer'] = context_output
 
     return jsonify(final_output),200
 

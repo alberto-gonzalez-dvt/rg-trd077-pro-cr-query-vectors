@@ -121,33 +121,6 @@ def bigquery_vector_request(site_id, drive_id, text_to_find):
     
   site_id_bq, drive_id_bq = format_biquery_table(site_id,drive_id)
 
-      
-  #query = f"""
-  #SELECT 
-  #  query.query, 
-  #  base.text, 
-  #  base.sp_file_extension, 
-  #  base.webUrl, 
-  #  base.file_name, 
-  #  base.drive_name,
-  #  base.trace_timestamp,
-  #  base.sp_file_size,
-  #  base.file_id,
-  #  base.drive_path,
-  #  base.sp_file_created_date_time,
-  #  base.sp_file_last_modified_date_time,
-  #  distance
-  #FROM VECTOR_SEARCH(
-  #  TABLE `{project_id}.{site_id_bq}.{drive_id_bq}`, 'embeddings',
-  #  (
-  #    SELECT ml_generate_embedding_result, content AS query
-  #    FROM ML.GENERATE_EMBEDDING(
-  #      MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
-  #        (SELECT " {text_to_find}" AS content))
-  #  ),
-  #  top_k => 5, distance_type => 'COSINE')
-  #"""
-
   query = f"""
   SELECT 
     query.query, 
@@ -169,15 +142,16 @@ def bigquery_vector_request(site_id, drive_id, text_to_find):
      WHERE EXISTS (
         SELECT 1 FROM UNNEST(embeddings) AS e WHERE e <> 0
       )
-    ), 'embeddings', 
+      ), 'embeddings', 
     (
       SELECT ml_generate_embedding_result, content AS query
       FROM ML.GENERATE_EMBEDDING(
         MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
           (SELECT " {text_to_find}" AS content))
     ),
-    top_k => 5, distance_type => 'COSINE')
+    top_k => 50, distance_type => 'COSINE') 
   """
+
 
   try:
     query_job = bigqueryClient.query(query)  # Execute the query
