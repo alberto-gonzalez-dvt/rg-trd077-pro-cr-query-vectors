@@ -111,6 +111,9 @@ def analyze_sharepoint():
       #seach_answer.append(drive_results)
       seach_answer.extend(drive_results)
     
+    # Order results 
+    seach_answer_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=False) #reverse=False->cosine
+
     # Instantiate the VertexAIReranker with the SDK manager
     reranker = VertexAIRank(project_id="rg-trd077-pro",
                             location_id="europe-west1",
@@ -121,7 +124,7 @@ def analyze_sharepoint():
                           )
     drive_docs=[]
     # Convert dict to Document
-    for i in seach_answer:
+    for i in seach_answer_ordered[:100]:
       drive_docs.append(Document(page_content=i["content"], metadata={"source":i["file_name"]}))
 
     # rerank de contextos
@@ -130,20 +133,20 @@ def analyze_sharepoint():
     for i in reranked_docs:
       context_output.append({
                              'content': i.page_content, 
-                             'score': seach_answer[int(i.metadata['id'])]['score'], 
-                             'file_extension': seach_answer[int(i.metadata['id'])]['file_extension'],
-                             'file_url': seach_answer[int(i.metadata['id'])]['file_url'],
-                             "file_name": seach_answer[int(i.metadata['id'])]['file_name'], 
-                             'library_id': seach_answer[int(i.metadata['id'])]['library_id'],
-                             'site_id': seach_answer[int(i.metadata['id'])]['site_id'],
-                             'user_id': seach_answer[int(i.metadata['id'])]['user_id'],
-                             'library_name': seach_answer[int(i.metadata['id'])]['library_name'],
-                             'library_upload_date': seach_answer[int(i.metadata['id'])]['library_upload_date'],
-                             'file_size': seach_answer[int(i.metadata['id'])]['file_size'],
-                             'library_url': seach_answer[int(i.metadata['id'])]['library_url'],
-                             'file_creation_date': seach_answer[int(i.metadata['id'])]['file_creation_date'],
-                             'file_modification_date': seach_answer[int(i.metadata['id'])]['file_modification_date'],
-                             'metadata': seach_answer[int(i.metadata['id'])]['metadata']
+                             'score': seach_answer_ordered[int(i.metadata['id'])]['score'], 
+                             'file_extension': seach_answer_ordered[int(i.metadata['id'])]['file_extension'],
+                             'file_url': seach_answer_ordered[int(i.metadata['id'])]['file_url'],
+                             "file_name": seach_answer_ordered[int(i.metadata['id'])]['file_name'], 
+                             'library_id': seach_answer_ordered[int(i.metadata['id'])]['library_id'],
+                             'site_id': seach_answer_ordered[int(i.metadata['id'])]['site_id'],
+                             'user_id': seach_answer_ordered[int(i.metadata['id'])]['user_id'],
+                             'library_name': seach_answer_ordered[int(i.metadata['id'])]['library_name'],
+                             'library_upload_date': seach_answer_ordered[int(i.metadata['id'])]['library_upload_date'],
+                             'file_size': seach_answer_ordered[int(i.metadata['id'])]['file_size'],
+                             'library_url': seach_answer_ordered[int(i.metadata['id'])]['library_url'],
+                             'file_creation_date': seach_answer_ordered[int(i.metadata['id'])]['file_creation_date'],
+                             'file_modification_date': seach_answer_ordered[int(i.metadata['id'])]['file_modification_date'],
+                             'metadata': seach_answer_ordered[int(i.metadata['id'])]['metadata']
                              })
 
     
