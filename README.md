@@ -27,7 +27,7 @@ gcloud run deploy rg-trd077-pro-cr-query-vectors \
 --max-instances=20 \
 --min-instances=0 \
 --cpu=0.5 \
---memory=512Mi \
+--memory=1Gi \
 --timeout=90 \
 --concurrency=1 \
 --service-account=id-rg-trd077-pro-cloud-functio@rg-trd077-pro.iam.gserviceaccount.com \

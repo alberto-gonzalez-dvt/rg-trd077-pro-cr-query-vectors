@@ -1,7 +1,8 @@
-from bigquery_functions import bigquery_vector_request, get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url
-from gemini import generate_answer
+from bigquery_functions import bigquery_vector_request, get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url, bigquery_search_request
+from gemini import generate_answer, generate_KeyWords
 from langchain_google_community.vertex_rank import VertexAIRank
 from langchain.schema import Document
+from utils import order_search_result
 
 from flask import Flask, request, jsonify
 
@@ -33,6 +34,15 @@ def analyze_sharepoint():
   text_to_find = body_json['query']
   # replace double quotes to avoid problems in query definition
   text_to_find = text_to_find.replace('"','')
+
+  # Instantiate the VertexAIReranker with the SDK manager
+  reranker = VertexAIRank(project_id="rg-trd077-pro",
+                          location_id="europe-west1",
+                          model="semantic-ranker-512-003",   # available models --> https://cloud.google.com/generative-ai-app-builder/docs/ranking#rank_or_rerank_a_set_of_records_according_to_a_query
+                          ranking_config="default_ranking_config",
+                          title_field="source",
+                          top_n=5,
+                        )
 
   
   #Main execution
@@ -98,6 +108,94 @@ def analyze_sharepoint():
     
     # FINAL OUTPUT
     final_output = {}
+
+    # check if user wants hybrid search
+    if 'full_text_search' in body_json and body_json['full_text_search'] == True:
+      search_column='text'
+      # First, generate Key Words
+      key_words = generate_KeyWords(text_to_find)
+      key_word_search=[]
+      # After key words, make a SEARCH query to find chunks containing these key words
+      for drive_obj in drives_to_find:
+        drive_results = bigquery_search_request(drive_obj['site_id'], drive_obj['drive_id'], search_column, key_words['key_words'])
+
+        #Add user_id to all items
+        for drive_result in drive_results:
+          drive_result['user_id'] = body_json['user_id']
+
+        #seach_answer.append(drive_results)
+        key_word_search.extend(drive_results)
+      
+      if len(key_word_search)!=0:
+        if len(key_word_search)>50:
+          # Use rankbm25 to associate scores and order SEARCH results. Return the best 100 results
+          search_results_ordered = order_search_result(search_result=key_word_search, gemini_keywords=key_words['key_words'], 
+                                                     num_results=50)
+        else:
+          search_results_ordered = [Document(page_content=i["content"],
+                                             metadata={"file_name":i["file_name"]}) 
+                                    for i in key_word_search]
+
+        # Re-rank best 50 results
+        reranked_docs = reranker._rerank_documents(query=text_to_find, documents=search_results_ordered)
+
+        # make context
+        context_output=[]
+        for i in reranked_docs:
+          if len(key_word_search)>50:
+            context_output.append({
+                             'content': i.page_content,  
+                             'score': search_results_ordered[int(i.metadata['id'])].metadata['score'],
+                             'file_extension': search_results_ordered[int(i.metadata['id'])].metadata['file_extension'],
+                             'file_url': search_results_ordered[int(i.metadata['id'])].metadata['file_url'],
+                             "file_name": search_results_ordered[int(i.metadata['id'])].metadata['file_name'], 
+                             'library_id': search_results_ordered[int(i.metadata['id'])].metadata['library_id'],
+                             'site_id': search_results_ordered[int(i.metadata['id'])].metadata['site_id'],
+                             'user_id': search_results_ordered[int(i.metadata['id'])].metadata['user_id'],
+                             'library_name': search_results_ordered[int(i.metadata['id'])].metadata['library_name'],
+                             'library_upload_date': search_results_ordered[int(i.metadata['id'])].metadata['library_upload_date'],
+                             'file_size': search_results_ordered[int(i.metadata['id'])].metadata['file_size'],
+                             'library_url': search_results_ordered[int(i.metadata['id'])].metadata['library_url'],
+                             'file_creation_date': search_results_ordered[int(i.metadata['id'])].metadata['file_creation_date'],
+                             'file_modification_date': search_results_ordered[int(i.metadata['id'])].metadata['file_modification_date'],
+                             'metadata': search_results_ordered[int(i.metadata['id'])].metadata['metadata'] 
+                             })
+          else:
+            context_output.append({
+                             'content': i.page_content,  
+                             'score': i.metadata['relevance_score'],
+                             'file_extension': key_word_search[int(i.metadata['id'])]['file_extension'],
+                             'file_url': key_word_search[int(i.metadata['id'])]['file_url'],
+                             "file_name": key_word_search[int(i.metadata['id'])]['file_name'], 
+                             'library_id': key_word_search[int(i.metadata['id'])]['library_id'],
+                             'site_id': key_word_search[int(i.metadata['id'])]['site_id'],
+                             'user_id': key_word_search[int(i.metadata['id'])]['user_id'],
+                             'library_name': key_word_search[int(i.metadata['id'])]['library_name'],
+                             'library_upload_date': key_word_search[int(i.metadata['id'])]['library_upload_date'],
+                             'file_size': key_word_search[int(i.metadata['id'])]['file_size'],
+                             'library_url': key_word_search[int(i.metadata['id'])]['library_url'],
+                             'file_creation_date': key_word_search[int(i.metadata['id'])]['file_creation_date'],
+                             'file_modification_date': key_word_search[int(i.metadata['id'])]['file_modification_date'],
+                             'metadata': key_word_search[int(i.metadata['id'])]['metadata'] 
+                             })
+
+        #If user wants to generate semantic answer must select generate_semantic_answer
+        if 'generate_semantic_answer' in body_json and body_json['generate_semantic_answer'] == True:
+          #Context are the texts of the elements found
+          contexts = []
+          for drive_result in reranked_docs:
+            contexts.append(drive_result.page_content)
+
+          final_output['semantic_answer'] = generate_answer(body_json['query'], contexts[:5])#Le pasamos solo los 5 con mejor score
+
+        final_output['search_answer'] = context_output
+
+        return jsonify(final_output),200
+      else:
+        return jsonify({
+            "error": "error in SEARCH",
+            "message": "The result of SEARCH function has 0 rows."
+          }),500
     
     #FIND FOR EACH DRIVE
     seach_answer = []
@@ -114,17 +212,10 @@ def analyze_sharepoint():
     # Order results 
     seach_answer_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=False) #reverse=False->cosine
 
-    # Instantiate the VertexAIReranker with the SDK manager
-    reranker = VertexAIRank(project_id="rg-trd077-pro",
-                            location_id="europe-west1",
-                            model="semantic-ranker-512-003",   # available models --> https://cloud.google.com/generative-ai-app-builder/docs/ranking#rank_or_rerank_a_set_of_records_according_to_a_query
-                            ranking_config="default_ranking_config",
-                            title_field="source",
-                            top_n=5,
-                          )
+    
     drive_docs=[]
     # Convert dict to Document
-    for i in seach_answer_ordered[:100]:
+    for i in seach_answer_ordered[:100]: # Keep only the best 100 results from all drives, to keep it only 1 request to Re-Rank
       drive_docs.append(Document(page_content=i["content"], metadata={"source":i["file_name"]}))
 
     # rerank de contextos
@@ -151,6 +242,7 @@ def analyze_sharepoint():
 
     
 
+    
     #If user wants to generate semantic answer must select generate_semantic_answer
     semantic_answer = ''
     if 'generate_semantic_answer' in body_json and body_json['generate_semantic_answer'] == True:
