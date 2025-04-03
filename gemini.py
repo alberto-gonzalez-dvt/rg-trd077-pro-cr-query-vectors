@@ -86,10 +86,10 @@ def generate_KeyWords(question):
       6. Prioritize terms that have the greatest impact on the text's meaning.
 
     Examples:
-      1.- input_text: Where is located the Madrid?
+      1.- input_text: Where is located Madrid?
           response: {{key_words:[Madrid]}}
-      2.- input_text: What equipment has a vibration level of 10 rms?
-          response: {{key_words: [vibration level, 10 rms, equipment]}}
+      2.- input_text: What equipment has a power consumption of 500 watts?
+          response: {{key_words: [power consumption, 500 watts, equipment]}}
       3.- input_text: What does table mean?
           response: {{key_words: [table]}}
       4.- input_text: What is the definition of table?
