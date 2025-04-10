@@ -152,6 +152,7 @@ def bigquery_vector_request(site_id, drive_id, text_to_find):
     ),
     top_k => 50, distance_type => 'COSINE') 
   """
+  #, options => '{{"use_brute_force":true}}'
 
 
   try:
@@ -222,6 +223,7 @@ def bigquery_search_request(site_id, drive_id, search_column,key_word):
   site_id_bq, drive_id_bq = format_biquery_table(site_id,drive_id)
   
   key_words = ["`"+i+"`" if "-" in i else i for i in key_word]
+  key_words = ["`"+i+"`" if "'" in i else i for i in key_words]
   key_words = " ".join(key_words)
 
   query=f"""
@@ -244,16 +246,44 @@ def bigquery_search_request(site_id, drive_id, search_column,key_word):
 
   try:
     query_job = bigqueryClient.query(query)  # Execute the query
+    query_result = query_job.result()
+    num_rows = query_result.total_rows
 
-    # Fetch results as an Arrow table
-    table = query_job.to_arrow()  
-    # Convert to Pandas DataFrame 
-    df = table.to_pandas()
-    df = df.map(lambda x: x.isoformat() if isinstance(x, datetime) else x) # Convert TimeStamps to string
-    #convert to dict
-    nears_list = df.to_dict(orient="records")
-    # Define a mapping of original column names to new names
-    column_mapping = {
+    if num_rows < 250:
+      nears_list=[]
+      for row in query_job:
+        output_object = {}
+
+        output_object['content'] = row['text']
+        #output_object['score'] = row['distance']
+        output_object['file_extension'] = row['sp_file_extension']
+        output_object['file_url'] = row['webUrl']
+        output_object['file_name'] = row['file_name']
+        output_object['library_id'] = drive_id
+        output_object['site_id'] = site_id
+        output_object['library_name'] = row['drive_name']
+        output_object['library_upload_date']= row['trace_timestamp']
+        output_object['file_size'] = row['sp_file_size']
+        output_object[''] = row['file_id']
+        output_object['library_url'] = row['drive_path']
+        output_object['file_creation_date'] = row['sp_file_created_date_time']
+        output_object['file_modification_date'] = row['sp_file_last_modified_date_time']
+        
+        source = {'source': row['webUrl']}
+        output_object['metadata'] = source
+
+        nears_list.append(output_object)
+    else:
+      # Fetch results as an Arrow table
+      table = query_job.to_arrow()  
+      # Convert to Pandas DataFrame 
+      df = table.to_pandas()
+      #df = query_job.to_dataframe()
+      df = df.map(lambda x: x.isoformat() if isinstance(x, datetime) else x) # Convert TimeStamps to string
+      #convert to dict
+      nears_list = df.to_dict(orient="records")
+      # Define a mapping of original column names to new names
+      column_mapping = {
         "text": "content",
         "sp_file_extension": "file_extension",
         "webUrl":"file_url", 
@@ -264,25 +294,15 @@ def bigquery_search_request(site_id, drive_id, search_column,key_word):
         "sp_file_created_date_time":"file_creation_date",
         "sp_file_last_modified_date_time":"file_modification_date", 
         # Add more mappings as needed
-    }
+      }
 
-    # Convert DataFrame to a list of dictionaries with renamed keys
-    nears_list = [
+      # Convert DataFrame to a list of dictionaries with renamed keys
+      nears_list = [
         {column_mapping.get(k, k): v for k, v in row.items()}  # Rename keys
         | {"library_id": drive_id, "site_id": site_id, "metadata":{'source': row['webUrl']}}
         for row in df.to_dict(orient="records")
-    ]
+      ]
 
-    #nears_list = []
-    #for row in query_job:
-
-    #  output_object = {}
-
-    #  output_object['content'] = row['text']
-    #  output_object['file_name'] = row['file_name']
-
-
-    #  nears_list.append(output_object)
     return nears_list
   except Exception as e:
     print((f"Error generic on query {e}"))

@@ -19,7 +19,8 @@ def order_search_result(search_result, gemini_keywords, num_results): #
 
   # Tokenize the documents
   #tokenized_corpus = [word_tokenize(doc.lower()) for doc in documents]
-  tokenized_corpus=[doc.lower().split() for doc in documents] 
+  #tokenized_corpus=[doc.lower().split() for doc in documents] 
+  tokenized_corpus=list(map(lambda doc: doc.lower().split(), documents))
   # Initialize BM25
   bm25 = BM25Okapi(tokenized_corpus)
   # Query
