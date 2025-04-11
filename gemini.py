@@ -65,12 +65,8 @@ def generate_KeyWords(question):
               "description": "The most relevant keywords extracted from the text for effective search.",
               "items":{ "type": "string" },
           },
-          #"hybrid_search": {
-          #    "type": "boolean",
-          #    "description": "Indicates whether a hybrid search should be performed (True) or not (False)."
-          #}
       },
-      "required": ["key_words"]#, "hybrid_search"]
+      "required": ["key_words"]
   }
 
   prompt = ChatPromptTemplate.from_template(

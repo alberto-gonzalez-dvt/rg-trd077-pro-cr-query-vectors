@@ -255,7 +255,6 @@ def bigquery_search_request(site_id, drive_id, search_column,key_word):
         output_object = {}
 
         output_object['content'] = row['text']
-        #output_object['score'] = row['distance']
         output_object['file_extension'] = row['sp_file_extension']
         output_object['file_url'] = row['webUrl']
         output_object['file_name'] = row['file_name']
