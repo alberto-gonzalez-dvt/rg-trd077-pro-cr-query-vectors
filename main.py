@@ -111,6 +111,12 @@ def analyze_sharepoint():
                                            search_column=search_column, 
                                            user_id=body_json['user_id'])
       final_context_ordered_uniques=search_context
+      if final_context_ordered_uniques==[]:
+        return jsonify({
+            "error": "SEARCH Error",
+            "message": "No matches found while doing SEARCH. Try using another search_type."
+        }), 500
+        
     
     elif search_type=='vector':
       print("VECTOR MODE")

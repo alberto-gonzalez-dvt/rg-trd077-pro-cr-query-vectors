@@ -138,20 +138,22 @@ def bigquery_vector_request(site_id, drive_id, text_to_find):
     base.sp_file_last_modified_date_time,
     distance
   FROM VECTOR_SEARCH(
-    (
-      SELECT * FROM `{project_id}.{site_id_bq}.{drive_id_bq}`
-     WHERE EXISTS (
-        SELECT 1 FROM UNNEST(embeddings) AS e WHERE e <> 0
-      )
-      ), 'embeddings', 
+    TABLE `{project_id}.{site_id_bq}.{drive_id_bq}`
+    , 'embeddings', 
     (
       SELECT ml_generate_embedding_result, content AS query
       FROM ML.GENERATE_EMBEDDING(
         MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
           (SELECT " {text_to_find}" AS content))
     ),
-    top_k => 50, distance_type => 'COSINE') 
+    top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}') 
   """
+  #(
+  #    SELECT * FROM `{project_id}.{site_id_bq}.{drive_id_bq}`
+  #   WHERE EXISTS (
+  #      SELECT 1 FROM UNNEST(embeddings) AS e WHERE e <> 0
+  #    )
+  #, options => '{{"fraction_lists_to_search":0.1}}'
   #, options => '{{"use_brute_force":true}}'
 
 
