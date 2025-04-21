@@ -115,97 +115,138 @@ def get_drives_ids_of_site_url(site_url):
     logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
     raise Exception(f"Error doing get_site_id_of_drive_id {e}")
 
-
-
-
-def bigquery_vector_request(site_id, drive_id, text_to_find):
-    
-  site_id_bq, drive_id_bq = format_biquery_table(site_id,drive_id)
+def get_mapping():
 
   query = f"""
-  SELECT 
-    query.query, 
-    base.text, 
-    base.sp_file_extension, 
-    base.webUrl, 
-    base.file_name, 
-    base.drive_name,
-    base.trace_timestamp,
-    base.sp_file_size,
-    base.file_id,
-    base.drive_path,
-    base.sp_file_created_date_time,
-    base.sp_file_last_modified_date_time,
-    distance
-  FROM VECTOR_SEARCH(
-    TABLE `{project_id}.{site_id_bq}.{drive_id_bq}`
-    , 'embeddings', 
-    (
-      SELECT ml_generate_embedding_result, content AS query
-      FROM ML.GENERATE_EMBEDDING(
-        MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
-          (SELECT " {text_to_find}" AS content))
-    ),
-    top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}') 
+  SELECT drive_web_url, site_id, drive_id
+  FROM `rg-trd077-pro.configuration_details.sites_and_drives`
   """
-  #(
-  #    SELECT * FROM `{project_id}.{site_id_bq}.{drive_id_bq}`
-  #   WHERE EXISTS (
-  #      SELECT 1 FROM UNNEST(embeddings) AS e WHERE e <> 0
-  #    )
-  #, options => '{{"fraction_lists_to_search":0.1}}'
-  #, options => '{{"use_brute_force":true}}'
-
 
   try:
     query_job = bigqueryClient.query(query)  # Execute the query
+    query_result = query_job.result()
+    #num_rows = query_result.total_rows
 
-    nears_list = []
-    for row in query_job:
-      
-      output_object = {}
-      
-      output_object['content'] = row['text']
-      output_object['score'] = row['distance']
-      output_object['file_extension'] = row['sp_file_extension']
-      output_object['file_url'] = row['webUrl']
-      output_object['file_name'] = row['file_name']
-      output_object['library_id'] = drive_id
-      output_object['site_id'] = site_id
-      output_object['library_name'] = row['drive_name']
-      output_object['library_upload_date']= row['trace_timestamp']
-      output_object['file_size'] = row['sp_file_size']
-      output_object[''] = row['file_id']
-      output_object['library_url'] = row['drive_path']
-      output_object['file_creation_date'] = row['sp_file_created_date_time']
-      output_object['file_modification_date'] = row['sp_file_last_modified_date_time']
+    df = query_job.to_dataframe()
+    #convert to dict
+    results = df.to_dict(orient="records")
+    #make mapping
+    mapping={i['drive_web_url']:{'site_id':i['site_id'], 'library_id':i['drive_id']} for i in results}
+    return mapping
   
-      source = {
-        'source': row['webUrl']
-      }
-      output_object['metadata'] = source
-
-
-
-      #library_category
-      #file_num_pages
-      #chunk_language
-      #chunk_key_phrases
-      #file_author
-      #file_title
-      #chunk_entities
-
-
-      
-
-      nears_list.append(output_object)
-    return nears_list
   except Exception as e:
-    logging.error(f"Error doing request {e}", exc_info=True)
-    print((f"Error generic on query {e}"))
-    raise Exception(f"Error generic on query {e}")
-  
-def bigquery_search_request(site_id, drive_id, search_column,key_word):
+    logging.error(f"Error doing get_mapping {e}", exc_info=True)
+    raise Exception(f"Error doing get_mapping {e}")
+
+
+
+def make_search_query(drives_to_find, search_column, key_words):
+  if len(drives_to_find)==1:
+    query=f"""
+    SELECT
+      file_name,
+      text,
+      sp_file_extension,
+      webUrl,
+      drive_name,
+      trace_timestamp,
+      sp_file_size,
+      file_id,
+      drive_path,
+      sp_file_created_date_time,
+      sp_file_last_modified_date_time
+     FROM `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
+     WHERE SEARCH({search_column}, r"{key_words}", analyzer=>'LOG_ANALYZER')
+    """
+
+  else:
+    query_parts=[]
+    for i in drives_to_find:
+      single_query=f"""
+      SELECT
+        file_name,
+        text,
+        sp_file_extension,
+        webUrl,
+        drive_name,
+        trace_timestamp,
+        sp_file_size,
+        file_id,
+        drive_path,
+        sp_file_created_date_time,
+        sp_file_last_modified_date_time
+      FROM `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
+      WHERE SEARCH({search_column}, r"{key_words}", analyzer=>'LOG_ANALYZER')
+    """
+      query_parts.append(single_query)
+    query="\nUNION ALL\n".join(query_parts)
+
+  return query
+
+def make_vector_search_query(drives_to_find,text_to_find):
+  if len(drives_to_find)==1:
+    query=f"""
+    SELECT
+      query.query,
+      base.text,
+      base.sp_file_extension,
+      base.webUrl,
+      base.file_name,
+      base.drive_name,
+      base.trace_timestamp,
+      base.sp_file_size,
+      base.file_id,
+      base.drive_path,
+      base.sp_file_created_date_time,
+      base.sp_file_last_modified_date_time,
+      distance
+    FROM VECTOR_SEARCH(
+      TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
+      , 'embeddings',
+      (
+        SELECT ml_generate_embedding_result, content AS query
+        FROM ML.GENERATE_EMBEDDING(
+          MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
+            (SELECT "{text_to_find}" AS content))
+      ),
+      top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
+    """
+
+  else:
+    query_parts=[]
+    for i in drives_to_find:
+      single_query=f"""
+     SELECT
+      query.query,
+      base.text,
+      base.sp_file_extension,
+      base.webUrl,
+      base.file_name,
+      base.drive_name,
+      base.trace_timestamp,
+      base.sp_file_size,
+      base.file_id,
+      base.drive_path,
+      base.sp_file_created_date_time,
+      base.sp_file_last_modified_date_time,
+      distance
+    FROM VECTOR_SEARCH(
+      TABLE `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
+      , 'embeddings',
+      (
+        SELECT ml_generate_embedding_result, content AS query
+        FROM ML.GENERATE_EMBEDDING(
+          MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
+            (SELECT "{text_to_find}" AS content))
+      ),
+      top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
+    """
+      query_parts.append(single_query)
+    query="\nUNION ALL\n".join(query_parts)
+
+  return query
+
+def bigquery_search_request(drives_to_find, search_column, key_word):
   """Use SEARCH function from BigQuery, given a table and some key words.
 
   Args:
@@ -220,31 +261,19 @@ def bigquery_search_request(site_id, drive_id, search_column,key_word):
   Returns:
       list: list of chunks that contains the key words
   """
-  
-  
-  site_id_bq, drive_id_bq = format_biquery_table(site_id,drive_id)
-  
+
+  #site_id_bq, drive_id_bq = format_biquery_table(site_id,drive_id)
+  # BigQuery Format
+  drives_to_find_formatted=[]
+  for i in drives_to_find:
+    site_id_bq, drive_id_bq = format_biquery_table(i['site_id'], i['drive_id'])
+    drives_to_find_formatted.append({'site_id':site_id_bq, 'drive_id':drive_id_bq})
+
   key_words = ["`"+i+"`" if "-" in i else i for i in key_word]
   key_words = ["`"+i+"`" if "'" in i else i for i in key_words]
   key_words = " ".join(key_words)
 
-  query=f"""
-     SELECT 
-      file_name, 
-      text, 
-      sp_file_extension, 
-      webUrl, 
-      drive_name,
-      trace_timestamp, 
-      sp_file_size, 
-      file_id, 
-      drive_path,
-      sp_file_created_date_time,
-      sp_file_last_modified_date_time
-     FROM `{project_id}.{site_id_bq}.{drive_id_bq}`
-     WHERE SEARCH({search_column}, r"{key_words}", analyzer=>'LOG_ANALYZER')
-
-  """
+  query=make_search_query(drives_to_find_formatted,search_column, key_words)
 
   try:
     query_job = bigqueryClient.query(query)  # Execute the query
@@ -260,8 +289,8 @@ def bigquery_search_request(site_id, drive_id, search_column,key_word):
         output_object['file_extension'] = row['sp_file_extension']
         output_object['file_url'] = row['webUrl']
         output_object['file_name'] = row['file_name']
-        output_object['library_id'] = drive_id
-        output_object['site_id'] = site_id
+        #output_object['library_id'] = drive_id
+        #output_object['site_id'] = site_id
         output_object['library_name'] = row['drive_name']
         output_object['library_upload_date']= row['trace_timestamp']
         output_object['file_size'] = row['sp_file_size']
@@ -269,15 +298,15 @@ def bigquery_search_request(site_id, drive_id, search_column,key_word):
         output_object['library_url'] = row['drive_path']
         output_object['file_creation_date'] = row['sp_file_created_date_time']
         output_object['file_modification_date'] = row['sp_file_last_modified_date_time']
-        
+
         source = {'source': row['webUrl']}
         output_object['metadata'] = source
 
         nears_list.append(output_object)
     else:
       # Fetch results as an Arrow table
-      table = query_job.to_arrow()  
-      # Convert to Pandas DataFrame 
+      table = query_job.to_arrow()
+      # Convert to Pandas DataFrame
       df = table.to_pandas()
       #df = query_job.to_dataframe()
       df = df.map(lambda x: x.isoformat() if isinstance(x, datetime) else x) # Convert TimeStamps to string
@@ -287,23 +316,69 @@ def bigquery_search_request(site_id, drive_id, search_column,key_word):
       column_mapping = {
         "text": "content",
         "sp_file_extension": "file_extension",
-        "webUrl":"file_url", 
-        "drive_name":"library_name", 
-        "trace_timestamp":"library_upload_date", 
-        "sp_file_size":"file_size", 
-        "drive_path":"library_url", 
+        "webUrl":"file_url",
+        "drive_name":"library_name",
+        "trace_timestamp":"library_upload_date",
+        "sp_file_size":"file_size",
+        "drive_path":"library_url",
         "sp_file_created_date_time":"file_creation_date",
-        "sp_file_last_modified_date_time":"file_modification_date", 
+        "sp_file_last_modified_date_time":"file_modification_date",
         # Add more mappings as needed
       }
 
       # Convert DataFrame to a list of dictionaries with renamed keys
       nears_list = [
         {column_mapping.get(k, k): v for k, v in row.items()}  # Rename keys
-        | {"library_id": drive_id, "site_id": site_id, "metadata":{'source': row['webUrl']}}
+        | {"metadata":{'source': row['webUrl']}} #"library_id": "TABLE", "site_id": "TABLE", 
         for row in df.to_dict(orient="records")
       ]
 
+    return nears_list
+  except Exception as e:
+    print((f"Error generic on query {e}"))
+    raise Exception(f"Error generic on query {e}")
+
+def bigquery_vector_request(drives_to_find, text_to_find):
+
+  # BigQuery Format
+  drives_to_find_formatted=[]
+  for i in drives_to_find:
+    site_id_bq, drive_id_bq = format_biquery_table(i['site_id'], i['drive_id'])
+    drives_to_find_formatted.append({'site_id':site_id_bq, 'drive_id':drive_id_bq})
+
+
+  query = make_vector_search_query(drives_to_find_formatted,text_to_find)
+
+  try:
+    query_job = bigqueryClient.query(query)  # Execute the query
+
+    nears_list = []
+
+    for row in query_job:
+
+      output_object = {}
+
+      output_object['content'] = row['text']
+      output_object['score'] = row['distance']
+      output_object['file_extension'] = row['sp_file_extension']
+      output_object['file_url'] = row['webUrl']
+      output_object['file_name'] = row['file_name']
+      #output_object['library_id'] = drive_id
+      #output_object['site_id'] = site_id
+      output_object['library_name'] = row['drive_name']
+      output_object['library_upload_date']= row['trace_timestamp']
+      output_object['file_size'] = row['sp_file_size']
+      output_object[''] = row['file_id']
+      output_object['library_url'] = row['drive_path']
+      output_object['file_creation_date'] = row['sp_file_created_date_time']
+      output_object['file_modification_date'] = row['sp_file_last_modified_date_time']
+
+      source = {
+        'source': row['webUrl']
+      }
+      output_object['metadata'] = source
+
+      nears_list.append(output_object)
     return nears_list
   except Exception as e:
     print((f"Error generic on query {e}"))

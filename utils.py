@@ -48,8 +48,8 @@ def order_search_result(search_result, gemini_keywords, num_results): #
                                          "score": float(bm25_scores[i]),
                                          "file_extension": search_result[i]["file_extension"],
                                          "file_url": search_result[i]["file_url"],
-                                         'library_id': search_result[i]["library_id"],
-                                         'site_id': search_result[i]["site_id"],
+                                         #'library_id': search_result[i]["library_id"],
+                                         #'site_id': search_result[i]["site_id"],
                                          'user_id': search_result[i]["user_id"],
                                          'library_name': search_result[i]["library_name"],
                                          'library_upload_date': search_result[i]["library_upload_date"],
@@ -74,15 +74,10 @@ def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, ke
     key_words=key_words_list
   print(f"Palabras clave: {key_words}")
   # After key words, make a SEARCH query to find chunks containing these key words
-  for drive_obj in drives_to_find:
-    drive_results = bigquery_search_request(drive_obj['site_id'], drive_obj['drive_id'], search_column, key_words)
- 
-    #Add user_id to all items
-    for drive_result in drive_results:
+  key_word_search=bigquery_search_request(drives_to_find, search_column, key_words)
+  #Add user_id to all items
+  for drive_result in key_word_search:
       drive_result['user_id'] = user_id
- 
-    #seach_answer.append(drive_results)
-    key_word_search.extend(drive_results)
       
   print(f"NÚMERO DE RESULTADOS DEL SEARCH: {len(key_word_search)}")
   # Eliminate posible duplicates based on content field
@@ -99,8 +94,8 @@ def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, ke
                                              metadata={"file_name":i["file_name"],
                                                       "file_extension": i["file_extension"],
                                                       "file_url": i["file_url"],
-                                                      'library_id': i["library_id"],
-                                                      'site_id': i["site_id"],
+                                                      #'library_id': i["library_id"],
+                                                      #'site_id': i["site_id"],
                                                       'user_id': i["user_id"],
                                                       'library_name': i["library_name"],
                                                       'library_upload_date': i["library_upload_date"],
@@ -123,8 +118,8 @@ def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, ke
                              'file_extension': search_results_ordered[int(i.metadata['id'])].metadata['file_extension'],
                              'file_url': search_results_ordered[int(i.metadata['id'])].metadata['file_url'],
                              "file_name": search_results_ordered[int(i.metadata['id'])].metadata['file_name'], 
-                             'library_id': search_results_ordered[int(i.metadata['id'])].metadata['library_id'],
-                             'site_id': search_results_ordered[int(i.metadata['id'])].metadata['site_id'],
+                             #'library_id': search_results_ordered[int(i.metadata['id'])].metadata['library_id'],
+                             #'site_id': search_results_ordered[int(i.metadata['id'])].metadata['site_id'],
                              'user_id': search_results_ordered[int(i.metadata['id'])].metadata['user_id'],
                              'library_name': search_results_ordered[int(i.metadata['id'])].metadata['library_name'],
                              'library_upload_date': search_results_ordered[int(i.metadata['id'])].metadata['library_upload_date'],
@@ -139,18 +134,13 @@ def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, ke
 
 def do_search_type_vector(drives_to_find, text_to_find, user_id):
   #FIND FOR EACH DRIVE
-  seach_answer = []
-  for drive_obj in drives_to_find:
-    drive_results = bigquery_vector_request(drive_obj['site_id'], drive_obj['drive_id'],text_to_find)
-
-    #Add user_id to all items
-    for drive_result in drive_results:
+  #seach_answer = []
+  seach_answer = bigquery_vector_request(drives_to_find, text_to_find)
+  #Add user_id to all items
+  for drive_result in seach_answer:
       drive_result['user_id'] = user_id
-
-    #seach_answer.append(drive_results)
-    seach_answer.extend(drive_results)
-    
   
+    
   # Order results 
   seach_answer_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=False) #reverse=False->cosine
   print(f"NÚMERO DE RESULTADOS DEL VECTOR_SEARCH: {len(seach_answer_ordered)}")
@@ -177,8 +167,8 @@ def do_search_type_vector(drives_to_find, text_to_find, user_id):
                              'file_extension': seach_answer_ordered[int(i.metadata['id'])]['file_extension'],
                              'file_url': seach_answer_ordered[int(i.metadata['id'])]['file_url'],
                              "file_name": seach_answer_ordered[int(i.metadata['id'])]['file_name'], 
-                             'library_id': seach_answer_ordered[int(i.metadata['id'])]['library_id'],
-                             'site_id': seach_answer_ordered[int(i.metadata['id'])]['site_id'],
+                             #'library_id': seach_answer_ordered[int(i.metadata['id'])]['library_id'],
+                             #'site_id': seach_answer_ordered[int(i.metadata['id'])]['site_id'],
                              'user_id': seach_answer_ordered[int(i.metadata['id'])]['user_id'],
                              'library_name': seach_answer_ordered[int(i.metadata['id'])]['library_name'],
                              'library_upload_date': seach_answer_ordered[int(i.metadata['id'])]['library_upload_date'],

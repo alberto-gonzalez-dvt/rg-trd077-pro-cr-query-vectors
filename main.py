@@ -1,4 +1,4 @@
-from bigquery_functions import get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url
+from bigquery_functions import get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url, get_mapping
 from gemini import generate_answer, generate_keywords_and_weights
 from utils import do_search_type_text, do_search_type_vector 
 
@@ -92,6 +92,9 @@ def analyze_sharepoint():
         for drive_item in drives_list:
           drives_to_find.append({ 'site_id':drive_item['site_id'], 'drive_id': drive_item['drive_id'] })
     
+    # Mapping to add site_id and drive_id to final output
+    mapping=get_mapping()
+    
     # FINAL OUTPUT
     final_output = {}
     search_column='text'
@@ -156,28 +159,28 @@ def analyze_sharepoint():
       print(f"Peso léxico: {search_weight}")
       print(f"Keywords: {key_words}")
 
-      if vector_search_weight > 0.6:  # Strong semantic sense
-        vector_search_context=do_search_type_vector(drives_to_find, text_to_find, body_json['user_id'])
-        final_context_ordered_uniques=vector_search_context
-      else:  # Low semantic sense, so we do hybrid search
-        # Do SEARCH
-        search_context = do_search_type_text(drives_to_find=drives_to_find, 
+      #if vector_search_weight > 0.6:  # Strong semantic sense
+      #  vector_search_context=do_search_type_vector(drives_to_find, text_to_find, body_json['user_id'])
+      #  final_context_ordered_uniques=vector_search_context
+      #else:  # Low semantic sense, so we do hybrid search
+      # Do SEARCH
+      search_context = do_search_type_text(drives_to_find=drives_to_find, 
                                            text_to_find=text_to_find, 
                                            search_column=search_column, 
                                            user_id=body_json['user_id'], 
                                            key_words_list=key_words)
-        search_context_weighted = [{**item, "score": item["score"] * search_weight} for item in search_context]
-        # Do VECTOR_SEARCH
-        vector_search_context=do_search_type_vector(drives_to_find, text_to_find, body_json['user_id'])
-        vector_search_context_weighted = [{**item, "score": item["score"] * vector_search_weight} for item in vector_search_context]
-        # Sum contexts from SEARCH and VECTOR_SEARCH. Order them according to scores(already weighted)
-        final_context=search_context_weighted+vector_search_context_weighted 
-        #order contexts using relevance score from Ranking model
-        final_context_ordered = sorted(final_context, key=lambda x: x['score'], reverse=True) #reverse=True --> descending order
-        # Eliminate posible duplicates based on content field. Keep first ocurrence, i.e., the one with highest score
-        uniques = {item["content"]: item for item in reversed(final_context_ordered)}
-        # Convert back to list
-        final_context_ordered_uniques = list(reversed(uniques.values()))
+      search_context_weighted = [{**item, "score": item["score"] * search_weight} for item in search_context]
+      # Do VECTOR_SEARCH
+      vector_search_context=do_search_type_vector(drives_to_find, text_to_find, body_json['user_id'])
+      vector_search_context_weighted = [{**item, "score": item["score"] * vector_search_weight} for item in vector_search_context]
+      # Sum contexts from SEARCH and VECTOR_SEARCH. Order them according to scores(already weighted)
+      final_context=search_context_weighted+vector_search_context_weighted 
+      #order contexts using relevance score from Ranking model
+      final_context_ordered = sorted(final_context, key=lambda x: x['score'], reverse=True) #reverse=True --> descending order
+      # Eliminate posible duplicates based on content field. Keep first ocurrence, i.e., the one with highest score
+      uniques = {item["content"]: item for item in reversed(final_context_ordered)}
+      # Convert back to list
+      final_context_ordered_uniques = list(reversed(uniques.values()))
         
     #If user wants to generate semantic answer must select generate_semantic_answer
     if 'generate_semantic_answer' in body_json and body_json['generate_semantic_answer'] == True:
@@ -190,6 +193,12 @@ def analyze_sharepoint():
 
       final_output['semantic_answer'] = generate_answer(body_json['query'], 
                                                         contexts[:10])
+
+    # add site_id and drive_id to final output based on drive_web_url
+    for item in final_context_ordered_uniques[:10]:
+      name = item.get('library_url')
+      if name in mapping:
+        item.update(mapping[name])
 
     final_output['search_answer'] = final_context_ordered_uniques[:10] 
 
