@@ -183,65 +183,127 @@ def make_search_query(drives_to_find, search_column, key_words):
 
   return query
 
+# EDITAMOS LA FUNCIÓN QUE HACE LA QUERY PARA QUE EN FUNCIÓN DEL TAMAÑO DE LA TABLA USE FUERZA BRUTA O ÍNDICE
 def make_vector_search_query(drives_to_find,text_to_find):
   if len(drives_to_find)==1:
-    query=f"""
-    SELECT
-      query.query,
-      base.text,
-      base.sp_file_extension,
-      base.webUrl,
-      base.file_name,
-      base.drive_name,
-      base.trace_timestamp,
-      base.sp_file_size,
-      base.file_id,
-      base.drive_path,
-      base.sp_file_created_date_time,
-      base.sp_file_last_modified_date_time,
-      distance
-    FROM VECTOR_SEARCH(
-      TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
-      , 'embeddings',
-      (
-        SELECT ml_generate_embedding_result, content AS query
-        FROM ML.GENERATE_EMBEDDING(
-          MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
-            (SELECT "{text_to_find}" AS content))
-      ),
-      top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
-    """
+    num_rows = bigqueryClient.get_table(f"rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}").num_rows
+    if num_rows >= 150000:
+      query=f"""
+      SELECT
+        query.query,
+        base.text,
+        base.sp_file_extension,
+        base.webUrl,
+        base.file_name,
+        base.drive_name,
+        base.trace_timestamp,
+        base.sp_file_size,
+        base.file_id,
+        base.drive_path,
+        base.sp_file_created_date_time,
+        base.sp_file_last_modified_date_time,
+        distance
+      FROM VECTOR_SEARCH(
+        TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
+        , 'embeddings',
+        (
+          SELECT ml_generate_embedding_result, content AS query
+          FROM ML.GENERATE_EMBEDDING(
+            MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
+              (SELECT "{text_to_find}" AS content))
+        ),
+        top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
+      """
+    else:
+      query=f"""
+      SELECT
+        query.query,
+        base.text,
+        base.sp_file_extension,
+        base.webUrl,
+        base.file_name,
+        base.drive_name,
+        base.trace_timestamp,
+        base.sp_file_size,
+        base.file_id,
+        base.drive_path,
+        base.sp_file_created_date_time,
+        base.sp_file_last_modified_date_time,
+        distance
+      FROM VECTOR_SEARCH(
+        TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
+        , 'embeddings',
+        (
+          SELECT ml_generate_embedding_result, content AS query
+          FROM ML.GENERATE_EMBEDDING(
+            MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
+              (SELECT "{text_to_find}" AS content))
+        ),
+        top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"use_brute_force":true}}')
+      """
 
   else:
     query_parts=[]
     for i in drives_to_find:
-      single_query=f"""
-     SELECT
-      query.query,
-      base.text,
-      base.sp_file_extension,
-      base.webUrl,
-      base.file_name,
-      base.drive_name,
-      base.trace_timestamp,
-      base.sp_file_size,
-      base.file_id,
-      base.drive_path,
-      base.sp_file_created_date_time,
-      base.sp_file_last_modified_date_time,
-      distance
-    FROM VECTOR_SEARCH(
-      TABLE `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
-      , 'embeddings',
-      (
-        SELECT ml_generate_embedding_result, content AS query
-        FROM ML.GENERATE_EMBEDDING(
-          MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
-            (SELECT "{text_to_find}" AS content))
-      ),
-      top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
-    """
-      query_parts.append(single_query)
+      num_rows = bigqueryClient.get_table(f"rg-trd077-pro.{i['site_id']}.{i['drive_id']}").num_rows
+      if num_rows >= 150000:
+        single_query=f"""
+          SELECT
+            query.query,
+            base.text,
+            base.sp_file_extension,
+            base.webUrl,
+            base.file_name,
+            base.drive_name,
+            base.trace_timestamp,
+            base.sp_file_size,
+            base.file_id,
+            base.drive_path,
+            base.sp_file_created_date_time,
+            base.sp_file_last_modified_date_time,
+            distance
+          FROM VECTOR_SEARCH(
+            TABLE `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
+            , 'embeddings',
+            (
+              SELECT ml_generate_embedding_result, content AS query
+              FROM ML.GENERATE_EMBEDDING(
+                MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
+                  (SELECT "{text_to_find}" AS content))
+            ),
+            top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
+          """
+        query_parts.append(single_query)
+      else:
+        single_query=f"""
+          SELECT
+            query.query,
+            base.text,
+            base.sp_file_extension,
+            base.webUrl,
+            base.file_name,
+            base.drive_name,
+            base.trace_timestamp,
+            base.sp_file_size,
+            base.file_id,
+            base.drive_path,
+            base.sp_file_created_date_time,
+            base.sp_file_last_modified_date_time,
+            distance
+          FROM VECTOR_SEARCH(
+            TABLE `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
+            , 'embeddings',
+            (
+              SELECT ml_generate_embedding_result, content AS query
+              FROM ML.GENERATE_EMBEDDING(
+                MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
+                  (SELECT "{text_to_find}" AS content))
+            ),
+            top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"use_brute_force":true}}')
+          """
+        query_parts.append(single_query)
+
+    #Unify queries  
     query="\nUNION ALL\n".join(query_parts)
 
   return query
