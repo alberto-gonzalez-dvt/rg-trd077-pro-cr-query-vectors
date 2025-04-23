@@ -140,29 +140,9 @@ def get_mapping():
 
 
 
-def make_search_query(drives_to_find, search_column, key_words):
+def make_search_query(drives_to_find, search_column, key_words, files_to_filter=None):
   if len(drives_to_find)==1:
-    query=f"""
-    SELECT
-      file_name,
-      text,
-      sp_file_extension,
-      webUrl,
-      drive_name,
-      trace_timestamp,
-      sp_file_size,
-      file_id,
-      drive_path,
-      sp_file_created_date_time,
-      sp_file_last_modified_date_time
-     FROM `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
-     WHERE SEARCH({search_column}, r"{key_words}", analyzer=>'LOG_ANALYZER')
-    """
-
-  else:
-    query_parts=[]
-    for i in drives_to_find:
-      single_query=f"""
+    query_base=f"""
       SELECT
         file_name,
         text,
@@ -175,20 +155,50 @@ def make_search_query(drives_to_find, search_column, key_words):
         drive_path,
         sp_file_created_date_time,
         sp_file_last_modified_date_time
-      FROM `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
+      FROM `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
       WHERE SEARCH({search_column}, r"{key_words}", analyzer=>'LOG_ANALYZER')
-    """
+      """
+    if files_to_filter:
+      query=query_base.replace("WHERE", f"WHERE webUrl IN ({files_to_filter}) AND")
+    else:
+      query=query_base
+
+  else:
+    query_parts=[]
+    for i in drives_to_find:
+      query_base=f"""
+        SELECT
+          file_name,
+          text,
+          sp_file_extension,
+          webUrl,
+          drive_name,
+          trace_timestamp,
+          sp_file_size,
+          file_id,
+          drive_path,
+          sp_file_created_date_time,
+          sp_file_last_modified_date_time
+        FROM `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
+        WHERE SEARCH({search_column}, r"{key_words}", analyzer=>'LOG_ANALYZER')
+      """
+      if files_to_filter:
+        single_query=query_base.replace("WHERE", f"WHERE webUrl IN ({files_to_filter}) AND")
+      else:
+        single_query=query_base
+  
       query_parts.append(single_query)
+
     query="\nUNION ALL\n".join(query_parts)
 
   return query
 
+
 # EDITAMOS LA FUNCIÓN QUE HACE LA QUERY PARA QUE EN FUNCIÓN DEL TAMAÑO DE LA TABLA USE FUERZA BRUTA O ÍNDICE
-def make_vector_search_query(drives_to_find,text_to_find):
+def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
   if len(drives_to_find)==1:
     num_rows = bigqueryClient.get_table(f"rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}").num_rows
-    if num_rows >= 150000:
-      query=f"""
+    query_base=f"""
       SELECT
         query.query,
         base.text,
@@ -214,40 +224,25 @@ def make_vector_search_query(drives_to_find,text_to_find):
         ),
         top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
       """
+    
+    if num_rows >= 150000:
+      if files_to_filter:
+        query=query_base.replace(f"TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`", f"(SELECT * FROM `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}` WHERE webUrl IN ({files_to_filter}))")
+      else:
+        query=query_base
     else:
-      query=f"""
-      SELECT
-        query.query,
-        base.text,
-        base.sp_file_extension,
-        base.webUrl,
-        base.file_name,
-        base.drive_name,
-        base.trace_timestamp,
-        base.sp_file_size,
-        base.file_id,
-        base.drive_path,
-        base.sp_file_created_date_time,
-        base.sp_file_last_modified_date_time,
-        distance
-      FROM VECTOR_SEARCH(
-        TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
-        , 'embeddings',
-        (
-          SELECT ml_generate_embedding_result, content AS query
-          FROM ML.GENERATE_EMBEDDING(
-            MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
-              (SELECT "{text_to_find}" AS content))
-        ),
-        top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"use_brute_force":true}}')
-      """
+      if files_to_filter:
+        query=query_base.replace('{"fraction_lists_to_search":0.1}','{"use_brute_force":true}')
+        query=query.replace(f"TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`", f"(SELECT * FROM `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}` WHERE webUrl IN ({files_to_filter}))")
+      else:
+        query=query_base.replace('{"fraction_lists_to_search":0.1}','{"use_brute_force":true}')
 
+      
   else:
     query_parts=[]
     for i in drives_to_find:
       num_rows = bigqueryClient.get_table(f"rg-trd077-pro.{i['site_id']}.{i['drive_id']}").num_rows
-      if num_rows >= 150000:
-        single_query=f"""
+      query_base = f"""
           SELECT
             query.query,
             base.text,
@@ -273,34 +268,20 @@ def make_vector_search_query(drives_to_find,text_to_find):
             ),
             top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
           """
+      if num_rows >= 150000:
+        if files_to_filter:
+          # increase fraction_list_to_search to look in more groups
+          single_query=query_base.replace('{"fraction_lists_to_search":0.1}','{"use_brute_force":true}') #'{"fraction_lists_to_search":0.2}'
+          single_query=single_query.replace(f"TABLE `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`", f"(SELECT * FROM `rg-trd077-pro.{i['site_id']}.{i['drive_id']}` WHERE webUrl IN ({files_to_filter}))")
+        else:
+          single_query=query_base
         query_parts.append(single_query)
       else:
-        single_query=f"""
-          SELECT
-            query.query,
-            base.text,
-            base.sp_file_extension,
-            base.webUrl,
-            base.file_name,
-            base.drive_name,
-            base.trace_timestamp,
-            base.sp_file_size,
-            base.file_id,
-            base.drive_path,
-            base.sp_file_created_date_time,
-            base.sp_file_last_modified_date_time,
-            distance
-          FROM VECTOR_SEARCH(
-            TABLE `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
-            , 'embeddings',
-            (
-              SELECT ml_generate_embedding_result, content AS query
-              FROM ML.GENERATE_EMBEDDING(
-                MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
-                  (SELECT "{text_to_find}" AS content))
-            ),
-            top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"use_brute_force":true}}')
-          """
+        if files_to_filter:
+          single_query=query_base.replace('{"fraction_lists_to_search":0.1}','{"use_brute_force":true}')
+          single_query=single_query.replace(f"TABLE `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`", f"(SELECT * FROM `rg-trd077-pro.{i['site_id']}.{i['drive_id']}` WHERE webUrl IN ({files_to_filter}))")
+        else:
+          single_query=query_base.replace('{"fraction_lists_to_search":0.1}','{"use_brute_force":true}')
         query_parts.append(single_query)
 
     #Unify queries  
@@ -308,7 +289,7 @@ def make_vector_search_query(drives_to_find,text_to_find):
 
   return query
 
-def bigquery_search_request(drives_to_find, search_column, key_word):
+def bigquery_search_request(drives_to_find, search_column, key_word, files_to_filter=None):
   """Use SEARCH function from BigQuery, given a table and some key words.
 
   Args:
@@ -335,7 +316,7 @@ def bigquery_search_request(drives_to_find, search_column, key_word):
   key_words = ["`"+i+"`" if "'" in i else i for i in key_words]
   key_words = " ".join(key_words)
 
-  query=make_search_query(drives_to_find_formatted,search_column, key_words)
+  query=make_search_query(drives_to_find_formatted,search_column, key_words, files_to_filter)
 
   try:
     query_job = bigqueryClient.query(query)  # Execute the query
@@ -400,7 +381,7 @@ def bigquery_search_request(drives_to_find, search_column, key_word):
     print((f"Error generic on query {e}"))
     raise Exception(f"Error generic on query {e}")
 
-def bigquery_vector_request(drives_to_find, text_to_find):
+def bigquery_vector_request(drives_to_find, text_to_find, files_to_filter=None):
 
   # BigQuery Format
   drives_to_find_formatted=[]
@@ -409,7 +390,7 @@ def bigquery_vector_request(drives_to_find, text_to_find):
     drives_to_find_formatted.append({'site_id':site_id_bq, 'drive_id':drive_id_bq})
 
 
-  query = make_vector_search_query(drives_to_find_formatted,text_to_find)
+  query = make_vector_search_query(drives_to_find_formatted,text_to_find, files_to_filter)
 
   try:
     query_job = bigqueryClient.query(query)  # Execute the query

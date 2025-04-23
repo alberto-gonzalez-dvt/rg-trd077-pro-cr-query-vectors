@@ -105,14 +105,25 @@ def analyze_sharepoint():
 
     else:
       search_type="default"
+    
+    # Check for documents to filter the search
+    selected_references_SPO = body_json.get('selected_references_SPO')
+    if isinstance(selected_references_SPO, list) and len(selected_references_SPO) > 0:
+        references_to_filter_raw = selected_references_SPO
+        references_to_filter = ', '.join(f"'{value}'" for value in references_to_filter_raw)
 
+    else:
+        references_to_filter = None
 
+  
     if search_type=='text':
       print("TEXT MODE")
       search_context = do_search_type_text(drives_to_find=drives_to_find, 
                                            text_to_find=text_to_find, 
                                            search_column=search_column, 
-                                           user_id=body_json['user_id'])
+                                           user_id=body_json['user_id'],
+                                           key_words_list=None, 
+                                           files_to_filter=references_to_filter)
       final_context_ordered_uniques=search_context
       if final_context_ordered_uniques==[]:
         return jsonify({
@@ -123,7 +134,10 @@ def analyze_sharepoint():
     
     elif search_type=='vector':
       print("VECTOR MODE")
-      vector_search_context= do_search_type_vector(drives_to_find, text_to_find, body_json['user_id'])
+      vector_search_context= do_search_type_vector(drives_to_find=drives_to_find, 
+                                                   text_to_find=text_to_find, 
+                                                   user_id=body_json['user_id'],
+                                                   files_to_filter=references_to_filter)
       final_context_ordered_uniques=vector_search_context
     
     elif search_type=='hybrid':
@@ -135,10 +149,15 @@ def analyze_sharepoint():
       search_context = do_search_type_text(drives_to_find=drives_to_find, 
                                            text_to_find=text_to_find, 
                                            search_column=search_column, 
-                                           user_id=body_json['user_id'])
+                                           user_id=body_json['user_id'],
+                                           key_words_list=None, 
+                                           files_to_filter=references_to_filter)
       search_context_weighted = [{**item, "score": item["score"] * search_weight} for item in search_context]
       # Do VECTOR_SEARCH
-      vector_search_context=do_search_type_vector(drives_to_find, text_to_find, body_json['user_id'])
+      vector_search_context=do_search_type_vector(drives_to_find=drives_to_find, 
+                                                   text_to_find=text_to_find, 
+                                                   user_id=body_json['user_id'],
+                                                   files_to_filter=references_to_filter)
       vector_search_context_weighted = [{**item, "score": item["score"] * vector_search_weight} for item in vector_search_context]
       # Sum contexts from SEARCH and VECTOR_SEARCH. Order them according to scores(already weighted)
       final_context=search_context_weighted+vector_search_context_weighted 
@@ -168,10 +187,14 @@ def analyze_sharepoint():
                                            text_to_find=text_to_find, 
                                            search_column=search_column, 
                                            user_id=body_json['user_id'], 
-                                           key_words_list=key_words)
+                                           key_words_list=key_words, 
+                                           files_to_filter=references_to_filter)
       search_context_weighted = [{**item, "score": item["score"] * search_weight} for item in search_context]
       # Do VECTOR_SEARCH
-      vector_search_context=do_search_type_vector(drives_to_find, text_to_find, body_json['user_id'])
+      vector_search_context=do_search_type_vector(drives_to_find=drives_to_find, 
+                                                   text_to_find=text_to_find, 
+                                                   user_id=body_json['user_id'],
+                                                   files_to_filter=references_to_filter)
       vector_search_context_weighted = [{**item, "score": item["score"] * vector_search_weight} for item in vector_search_context]
       # Sum contexts from SEARCH and VECTOR_SEARCH. Order them according to scores(already weighted)
       final_context=search_context_weighted+vector_search_context_weighted 
@@ -186,7 +209,6 @@ def analyze_sharepoint():
     if 'generate_semantic_answer' in body_json and body_json['generate_semantic_answer'] == True:
       #Context are the texts of the elements found
       contexts = []
-
 
       for drive_result in final_context_ordered_uniques:
         contexts.append({"file_name": drive_result['file_name'],"content":drive_result['content']})
@@ -203,7 +225,7 @@ def analyze_sharepoint():
     final_output['search_answer'] = final_context_ordered_uniques[:10] 
 
     return jsonify(final_output),200
-  
+ 
   except:
     error_trace = traceback.format_exc()
     print(error_trace)

@@ -63,7 +63,7 @@ def order_search_result(search_result, gemini_keywords, num_results): #
   return drive_docs 
 
 
-def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, key_words_list=None):
+def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, key_words_list=None, files_to_filter=None):
   search_context=[]
   key_word_search=[]
   # First, generate Key Words if not passed
@@ -74,7 +74,7 @@ def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, ke
     key_words=key_words_list
   print(f"Palabras clave: {key_words}")
   # After key words, make a SEARCH query to find chunks containing these key words
-  key_word_search=bigquery_search_request(drives_to_find, search_column, key_words)
+  key_word_search=bigquery_search_request(drives_to_find, search_column, key_words, files_to_filter)
   #Add user_id to all items
   for drive_result in key_word_search:
       drive_result['user_id'] = user_id
@@ -132,17 +132,17 @@ def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, ke
   return search_context
 
 
-def do_search_type_vector(drives_to_find, text_to_find, user_id):
+def do_search_type_vector(drives_to_find, text_to_find, user_id, files_to_filter=None):
   #FIND FOR EACH DRIVE
   #seach_answer = []
-  seach_answer = bigquery_vector_request(drives_to_find, text_to_find)
+  seach_answer = bigquery_vector_request(drives_to_find, text_to_find, files_to_filter)
   #Add user_id to all items
   for drive_result in seach_answer:
       drive_result['user_id'] = user_id
   
     
   # Order results 
-  seach_answer_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=False) #reverse=False->cosine
+  seach_answer_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=False) #reverse=False->small distances are better
   print(f"NÚMERO DE RESULTADOS DEL VECTOR_SEARCH: {len(seach_answer_ordered)}")
   # Eliminate posible duplicates based on content field. Keep first ocurrence, i.e., the one with highest score
   uniques = {item["content"]: item for item in reversed(seach_answer_ordered)}
