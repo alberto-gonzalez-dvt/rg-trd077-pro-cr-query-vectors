@@ -22,8 +22,8 @@ def format_biquery_table(site_id,drive_id):
 
   return site_id_bq, drive_id_bq
 
-def get_site_id_of_drive_id(drive_id):
-
+def get_site_id_of_drive_id(drive_id, cache=True):
+  job_config = bigquery.QueryJobConfig(use_query_cache=cache)
   query = f"""
   SELECT site_id 
   FROM `rg-trd077-pro.configuration_details.sites_and_drives` 
@@ -31,7 +31,7 @@ def get_site_id_of_drive_id(drive_id):
   """
 
   try:
-    query_job = bigqueryClient.query(query)  # Execute the query
+    query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
 
     #TODO: Tirar error si hay 0 rows o mas de 1
     df = query_job.to_dataframe()
@@ -48,8 +48,8 @@ def get_site_id_of_drive_id(drive_id):
     logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
     raise Exception(f"Error doing get_site_id_of_drive_id {e}")
   
-def get_site_id_of_drive_url(drive_url):
-
+def get_site_id_of_drive_url(drive_url, cache=True):
+  job_config = bigquery.QueryJobConfig(use_query_cache=cache)
   query = f"""
   SELECT site_id, drive_id
   FROM `rg-trd077-pro.configuration_details.sites_and_drives` 
@@ -57,7 +57,7 @@ def get_site_id_of_drive_url(drive_url):
   """
 
   try:
-    query_job = bigqueryClient.query(query)  # Execute the query
+    query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
 
     #TODO: Tirar error si hay 0 rows o mas de 1
     df = query_job.to_dataframe()
@@ -75,7 +75,8 @@ def get_site_id_of_drive_url(drive_url):
     logging.error(f"Error doing get_site_id_of_drive_url {e}", exc_info=True)
     raise Exception(f"Error doing get_site_id_of_drive_url {e}")
   
-def get_drives_ids_of_site_id(site_id):
+def get_drives_ids_of_site_id(site_id,cache):
+  job_config = bigquery.QueryJobConfig(use_query_cache=cache)
   
   query = f"""
   SELECT drive_id 
@@ -84,7 +85,7 @@ def get_drives_ids_of_site_id(site_id):
   """
 
   try:
-    query_job = bigqueryClient.query(query)  # Execute the query
+    query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
 
     drives_list = []
     for row in query_job:
@@ -95,7 +96,8 @@ def get_drives_ids_of_site_id(site_id):
     logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
     raise Exception(f"Error doing get_site_id_of_drive_id {e}")
 
-def get_drives_ids_of_site_url(site_url):
+def get_drives_ids_of_site_url(site_url, cache=True):
+  job_config = bigquery.QueryJobConfig(use_query_cache=cache)
 
   query = f"""
   SELECT site_id,drive_id 
@@ -104,7 +106,7 @@ def get_drives_ids_of_site_url(site_url):
   """
 
   try:
-    query_job = bigqueryClient.query(query)  # Execute the query
+    query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
 
     drives_list = []
     for row in query_job:
@@ -115,7 +117,8 @@ def get_drives_ids_of_site_url(site_url):
     logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
     raise Exception(f"Error doing get_site_id_of_drive_id {e}")
 
-def get_mapping():
+def get_mapping(cache=True):
+  job_config = bigquery.QueryJobConfig(use_query_cache=cache)
 
   query = f"""
   SELECT drive_web_url, site_id, drive_id
@@ -123,7 +126,7 @@ def get_mapping():
   """
 
   try:
-    query_job = bigqueryClient.query(query)  # Execute the query
+    query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
     query_result = query_job.result()
     #num_rows = query_result.total_rows
 
@@ -289,7 +292,7 @@ def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
 
   return query
 
-def bigquery_search_request(drives_to_find, search_column, key_word, files_to_filter=None):
+def bigquery_search_request(drives_to_find, search_column, key_words, files_to_filter=None, cache=True):
   """Use SEARCH function from BigQuery, given a table and some key words.
 
   Args:
@@ -312,14 +315,26 @@ def bigquery_search_request(drives_to_find, search_column, key_word, files_to_fi
     site_id_bq, drive_id_bq = format_biquery_table(i['site_id'], i['drive_id'])
     drives_to_find_formatted.append({'site_id':site_id_bq, 'drive_id':drive_id_bq})
 
-  key_words = ["`"+i+"`" if "-" in i else i for i in key_word]
-  key_words = ["`"+i+"`" if "'" in i else i for i in key_words]
+  # Wrap keywords with rare characters in backticks
+  delimiters=[
+    "[", "]", "<", ">", "(", ")", "{", "}", "|", "!", ";", ",", "'", '"', "*", "&",
+    "?", "+", "/", ":", "=", "@", ".", "-", "$", "%", "\\", "_", "\n", "\r", "\s", "\t",
+    "%21", "%26", "%2526", "%3B", "%3b", "%7C", "%7c", "%20", "%2B", "%2b", "%3D", "%3d",
+    "%2520", "%5D", "%5d", "%5B", "%5b", "%3A", "%3a", "%0A", "%0a", "%2C", "%2c", "%28", "%29"
+  ]
+  key_words = [
+    f"`{word}`" if any(delim in word for delim in delimiters) else word
+    for word in key_words
+  ] 
+  #key_words = ["`"+i+"`" if "-" in i else i for i in key_word]
+  #key_words = ["`"+i+"`" if "'" in i else i for i in key_words]
   key_words = " ".join(key_words)
 
   query=make_search_query(drives_to_find_formatted,search_column, key_words, files_to_filter)
+  job_config = bigquery.QueryJobConfig(use_query_cache=cache)
 
   try:
-    query_job = bigqueryClient.query(query)  # Execute the query
+    query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
     query_result = query_job.result()
     num_rows = query_result.total_rows
 
@@ -381,7 +396,7 @@ def bigquery_search_request(drives_to_find, search_column, key_word, files_to_fi
     print((f"Error generic on query {e}"))
     raise Exception(f"Error generic on query {e}")
 
-def bigquery_vector_request(drives_to_find, text_to_find, files_to_filter=None):
+def bigquery_vector_request(drives_to_find, text_to_find, files_to_filter=None, cache=True):
 
   # BigQuery Format
   drives_to_find_formatted=[]
@@ -391,9 +406,10 @@ def bigquery_vector_request(drives_to_find, text_to_find, files_to_filter=None):
 
 
   query = make_vector_search_query(drives_to_find_formatted,text_to_find, files_to_filter)
+  job_config = bigquery.QueryJobConfig(use_query_cache=cache)
 
   try:
-    query_job = bigqueryClient.query(query)  # Execute the query
+    query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
 
     nears_list = []
 

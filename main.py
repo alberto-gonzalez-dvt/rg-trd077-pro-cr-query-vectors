@@ -32,6 +32,12 @@ def analyze_sharepoint():
   text_to_find = body_json['query']
   # replace double quotes to avoid problems in query definition
   text_to_find = text_to_find.replace('"','')
+  # Check for cache parameter
+  if 'cache'in body_json:
+    cache=body_json['cache']
+
+  else:
+    cache="True"
   
   #Main execution
   try:
@@ -47,7 +53,7 @@ def analyze_sharepoint():
       for drive_id in body_json['selected_libraries_ids']:
         # Get site of library
         try:
-          site_id = get_site_id_of_drive_id(drive_id)
+          site_id = get_site_id_of_drive_id(drive_id, cache=cache)
         except:
           print("ERROR IN DRIVE_ID")
           return "ERROR IN DRIVE_ID",500
@@ -58,7 +64,7 @@ def analyze_sharepoint():
       for drive_url in body_json['selected_libraries_urls']:
         # Get site_id and drive_id
         try:
-          site_id, drive_id = get_site_id_of_drive_url(drive_url)
+          site_id, drive_id = get_site_id_of_drive_url(drive_url, cache=cache)
         except:
           print("ERROR IN DRIVE_URL")
           return "ERROR IN DRIVE_URL",500
@@ -69,7 +75,7 @@ def analyze_sharepoint():
       for site_id in body_json['selected_sites_ids']:
         # Get list of drives
         try:
-          drives_list = get_drives_ids_of_site_id(site_id)
+          drives_list = get_drives_ids_of_site_id(site_id, cache=cache)
         except:
           print("ERROR IN SITE_ID")
           return "ERROR IN SITE_ID",500
@@ -83,7 +89,7 @@ def analyze_sharepoint():
       for site_url in body_json['selected_sites_urls']:
         # Get list of drives
         try:
-          drives_list = get_drives_ids_of_site_url(site_url)
+          drives_list = get_drives_ids_of_site_url(site_url, cache=cache)
         except:
           print("ERROR IN SITE_URL")
           return "ERROR IN SITE_URL",500
@@ -93,7 +99,7 @@ def analyze_sharepoint():
           drives_to_find.append({ 'site_id':drive_item['site_id'], 'drive_id': drive_item['drive_id'] })
     
     # Mapping to add site_id and drive_id to final output
-    mapping=get_mapping()
+    mapping=get_mapping(cache=cache)
     
     # FINAL OUTPUT
     final_output = {}
@@ -105,6 +111,7 @@ def analyze_sharepoint():
 
     else:
       search_type="default"
+    
     
     # Check for documents to filter the search
     selected_references_SPO = body_json.get('selected_references_SPO')
@@ -123,7 +130,8 @@ def analyze_sharepoint():
                                            search_column=search_column, 
                                            user_id=body_json['user_id'],
                                            key_words_list=None, 
-                                           files_to_filter=references_to_filter)
+                                           files_to_filter=references_to_filter,
+                                           cache=cache)
       final_context_ordered_uniques=search_context
       if final_context_ordered_uniques==[]:
         return jsonify({
@@ -137,7 +145,8 @@ def analyze_sharepoint():
       vector_search_context= do_search_type_vector(drives_to_find=drives_to_find, 
                                                    text_to_find=text_to_find, 
                                                    user_id=body_json['user_id'],
-                                                   files_to_filter=references_to_filter)
+                                                   files_to_filter=references_to_filter,
+                                                   cache=cache)
       final_context_ordered_uniques=vector_search_context
     
     elif search_type=='hybrid':
@@ -151,13 +160,15 @@ def analyze_sharepoint():
                                            search_column=search_column, 
                                            user_id=body_json['user_id'],
                                            key_words_list=None, 
-                                           files_to_filter=references_to_filter)
+                                           files_to_filter=references_to_filter,
+                                           cache=cache)
       search_context_weighted = [{**item, "score": item["score"] * search_weight} for item in search_context]
       # Do VECTOR_SEARCH
       vector_search_context=do_search_type_vector(drives_to_find=drives_to_find, 
                                                    text_to_find=text_to_find, 
                                                    user_id=body_json['user_id'],
-                                                   files_to_filter=references_to_filter)
+                                                   files_to_filter=references_to_filter,
+                                                   cache=cache)
       vector_search_context_weighted = [{**item, "score": item["score"] * vector_search_weight} for item in vector_search_context]
       # Sum contexts from SEARCH and VECTOR_SEARCH. Order them according to scores(already weighted)
       final_context=search_context_weighted+vector_search_context_weighted 
@@ -188,13 +199,15 @@ def analyze_sharepoint():
                                            search_column=search_column, 
                                            user_id=body_json['user_id'], 
                                            key_words_list=key_words, 
-                                           files_to_filter=references_to_filter)
+                                           files_to_filter=references_to_filter,
+                                           cache=cache)
       search_context_weighted = [{**item, "score": item["score"] * search_weight} for item in search_context]
       # Do VECTOR_SEARCH
       vector_search_context=do_search_type_vector(drives_to_find=drives_to_find, 
                                                    text_to_find=text_to_find, 
                                                    user_id=body_json['user_id'],
-                                                   files_to_filter=references_to_filter)
+                                                   files_to_filter=references_to_filter,
+                                                   cache=cache)
       vector_search_context_weighted = [{**item, "score": item["score"] * vector_search_weight} for item in vector_search_context]
       # Sum contexts from SEARCH and VECTOR_SEARCH. Order them according to scores(already weighted)
       final_context=search_context_weighted+vector_search_context_weighted 
