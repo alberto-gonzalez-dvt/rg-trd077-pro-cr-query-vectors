@@ -27,7 +27,7 @@ def generate_answer(question, contexts):
   )
 
   llm = ChatVertexAI(
-    model="gemini-1.5-flash-001",
+    model="gemini-2.0-flash-001",
     temperature=0,
     safety_settings = {
   HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
