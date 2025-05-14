@@ -3,12 +3,13 @@ from langchain.schema import Document
 from gemini import generate_KeyWords
 from bigquery_functions import bigquery_search_request, bigquery_vector_request
 from langchain_google_community.vertex_rank import VertexAIRank
-
+import time
 
 # Instantiate the VertexAIReranker with the SDK manager
+#available models --> https://cloud.google.com/generative-ai-app-builder/docs/ranking#rank_or_rerank_a_set_of_records_according_to_a_query
 reranker = VertexAIRank(project_id="rg-trd077-pro",
                           location_id="europe-west1",
-                          model="semantic-ranker-512-003",   # available models --> https://cloud.google.com/generative-ai-app-builder/docs/ranking#rank_or_rerank_a_set_of_records_according_to_a_query
+                          model="semantic-ranker-512-003", #"semantic-ranker-512-003", #"semantic-ranker-default-004"
                           ranking_config="default_ranking_config",
                           title_field="source",
                           top_n=30,
@@ -72,14 +73,16 @@ def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, ke
     key_words=gemini_response['key_words']
   else:
     key_words=key_words_list
-  print(f"Palabras clave: {key_words}")
+  
+  #print(f"Palabras clave: {key_words}")
   # After key words, make a SEARCH query to find chunks containing these key words
   key_word_search=bigquery_search_request(drives_to_find, search_column, key_words, files_to_filter, cache)
+  
   #Add user_id to all items
   for drive_result in key_word_search:
       drive_result['user_id'] = user_id
       
-  print(f"NÚMERO DE RESULTADOS DEL SEARCH: {len(key_word_search)}")
+  #print(f"NÚMERO DE RESULTADOS DEL SEARCH: {len(key_word_search)}")
   # Eliminate posible duplicates based on content field
   uniques = {item["content"]: item for item in key_word_search}
   # Convert back to list
@@ -129,6 +132,7 @@ def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, ke
                              'file_modification_date': search_results_ordered[int(i.metadata['id'])].metadata['file_modification_date'],
                              'metadata': search_results_ordered[int(i.metadata['id'])].metadata['metadata'] 
                         })
+  
   return search_context
 
 
@@ -143,7 +147,7 @@ def do_search_type_vector(drives_to_find, text_to_find, user_id, files_to_filter
     
   # Order results 
   seach_answer_ordered = sorted(seach_answer, key=lambda x: x["score"], reverse=False) #reverse=False->small distances are better
-  print(f"NÚMERO DE RESULTADOS DEL VECTOR_SEARCH: {len(seach_answer_ordered)}")
+  #print(f"NÚMERO DE RESULTADOS DEL VECTOR_SEARCH: {len(seach_answer_ordered)}")
   # Eliminate posible duplicates based on content field. Keep first ocurrence, i.e., the one with highest score
   uniques = {item["content"]: item for item in reversed(seach_answer_ordered)}
   # Convert back to list

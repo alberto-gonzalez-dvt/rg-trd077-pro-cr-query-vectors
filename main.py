@@ -1,6 +1,7 @@
-from bigquery_functions import get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url, get_mapping
+from bigquery_functions import get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url, get_mapping, find_non_empty_drives_efficient
 from gemini import generate_answer, generate_keywords_and_weights
 from utils import do_search_type_text, do_search_type_vector 
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, request, jsonify
 
@@ -11,7 +12,6 @@ import traceback
 
 @app.post("/")
 def analyze_sharepoint():
-  
   body_json = request.get_json(silent=True)
 
   #Check mandatory parameters
@@ -38,7 +38,6 @@ def analyze_sharepoint():
 
   else:
     cache="True"
-  
   #Main execution
   try:
 
@@ -98,8 +97,14 @@ def analyze_sharepoint():
         for drive_item in drives_list:
           drives_to_find.append({ 'site_id':drive_item['site_id'], 'drive_id': drive_item['drive_id'] })
     
+    # If len(drives_to_find)=0 (i.e., user choose the drive to search), we assume it is non empty
+    if len(drives_to_find) > 1:
+      non_empty_drives_to_find = find_non_empty_drives_efficient(drives_to_find, cache=cache)
+    else:
+      non_empty_drives_to_find = drives_to_find
+    
     # Mapping to add site_id and drive_id to final output
-    mapping=get_mapping(cache=cache)
+    mapping=get_mapping(non_empty_drives_to_find, cache=cache)
     
     # FINAL OUTPUT
     final_output = {}
@@ -122,10 +127,9 @@ def analyze_sharepoint():
     else:
         references_to_filter = None
 
-  
     if search_type=='text':
-      print("TEXT MODE")
-      search_context = do_search_type_text(drives_to_find=drives_to_find, 
+      #print("TEXT MODE")
+      search_context = do_search_type_text(drives_to_find=non_empty_drives_to_find, 
                                            text_to_find=text_to_find, 
                                            search_column=search_column, 
                                            user_id=body_json['user_id'],
@@ -141,8 +145,8 @@ def analyze_sharepoint():
         
     
     elif search_type=='vector':
-      print("VECTOR MODE")
-      vector_search_context= do_search_type_vector(drives_to_find=drives_to_find, 
+      #print("VECTOR MODE")
+      vector_search_context= do_search_type_vector(drives_to_find=non_empty_drives_to_find, 
                                                    text_to_find=text_to_find, 
                                                    user_id=body_json['user_id'],
                                                    files_to_filter=references_to_filter,
@@ -150,25 +154,29 @@ def analyze_sharepoint():
       final_context_ordered_uniques=vector_search_context
     
     elif search_type=='hybrid':
-      print("HYBRID MODE")
+      #print("HYBRID MODE")
       # assing weights
       search_weight=0.5
       vector_search_weight=0.5
-      # Do SEARCH
-      search_context = do_search_type_text(drives_to_find=drives_to_find, 
+      # Do SEARCH and VECTOR_SEARCH in parallel
+      with ThreadPoolExecutor() as executor:
+        future1 = executor.submit(do_search_type_text,drives_to_find=non_empty_drives_to_find, 
                                            text_to_find=text_to_find, 
                                            search_column=search_column, 
                                            user_id=body_json['user_id'],
                                            key_words_list=None, 
                                            files_to_filter=references_to_filter,
                                            cache=cache)
-      search_context_weighted = [{**item, "score": item["score"] * search_weight} for item in search_context]
-      # Do VECTOR_SEARCH
-      vector_search_context=do_search_type_vector(drives_to_find=drives_to_find, 
+        future2 = executor.submit(do_search_type_vector,drives_to_find=non_empty_drives_to_find, 
                                                    text_to_find=text_to_find, 
                                                    user_id=body_json['user_id'],
                                                    files_to_filter=references_to_filter,
                                                    cache=cache)
+        search_context = future1.result()
+        vector_search_context = future2.result()
+
+      # weight contexts
+      search_context_weighted = [{**item, "score": item["score"] * search_weight} for item in search_context]
       vector_search_context_weighted = [{**item, "score": item["score"] * vector_search_weight} for item in vector_search_context]
       # Sum contexts from SEARCH and VECTOR_SEARCH. Order them according to scores(already weighted)
       final_context=search_context_weighted+vector_search_context_weighted 
@@ -180,34 +188,40 @@ def analyze_sharepoint():
       final_context_ordered_uniques = list(reversed(uniques.values()))
     
     else: # Default mode, we need to infer keywords and weights with Gemini
-      print("DEFAULT MODE")
+      #print("DEFAULT MODE")
       gemini_response=generate_keywords_and_weights(text_to_find)
       search_weight=gemini_response['keyword_weight']
       vector_search_weight=gemini_response['semantic_weight']
       key_words=gemini_response['key_words']
-      print(f"Peso semántico: {vector_search_weight}")
-      print(f"Peso léxico: {search_weight}")
-      print(f"Keywords: {key_words}")
+      #print(f"Peso semántico: {vector_search_weight}")
+      #print(f"Peso léxico: {search_weight}")
+      #print(f"Keywords: {key_words}")
 
       #if vector_search_weight > 0.6:  # Strong semantic sense
       #  vector_search_context=do_search_type_vector(drives_to_find, text_to_find, body_json['user_id'])
       #  final_context_ordered_uniques=vector_search_context
       #else:  # Low semantic sense, so we do hybrid search
-      # Do SEARCH
-      search_context = do_search_type_text(drives_to_find=drives_to_find, 
-                                           text_to_find=text_to_find, 
-                                           search_column=search_column, 
-                                           user_id=body_json['user_id'], 
-                                           key_words_list=key_words, 
-                                           files_to_filter=references_to_filter,
-                                           cache=cache)
+      # Do SEARCH and VECTOR_SEARCH in parallel
+      with ThreadPoolExecutor() as executor:
+        future1 = executor.submit(do_search_type_text,
+                                    drives_to_find=non_empty_drives_to_find, 
+                                    text_to_find=text_to_find, 
+                                    search_column=search_column, 
+                                    user_id=body_json['user_id'], 
+                                    key_words_list=key_words, 
+                                    files_to_filter=references_to_filter,
+                                    cache=cache)
+        future2 = executor.submit(do_search_type_vector,
+                                  drives_to_find=non_empty_drives_to_find, 
+                                  text_to_find=text_to_find, 
+                                  user_id=body_json['user_id'],
+                                  files_to_filter=references_to_filter,
+                                  cache=cache)
+        search_context = future1.result()
+        vector_search_context = future2.result()
+      
+      #weight contexts
       search_context_weighted = [{**item, "score": item["score"] * search_weight} for item in search_context]
-      # Do VECTOR_SEARCH
-      vector_search_context=do_search_type_vector(drives_to_find=drives_to_find, 
-                                                   text_to_find=text_to_find, 
-                                                   user_id=body_json['user_id'],
-                                                   files_to_filter=references_to_filter,
-                                                   cache=cache)
       vector_search_context_weighted = [{**item, "score": item["score"] * vector_search_weight} for item in vector_search_context]
       # Sum contexts from SEARCH and VECTOR_SEARCH. Order them according to scores(already weighted)
       final_context=search_context_weighted+vector_search_context_weighted 
@@ -217,7 +231,7 @@ def analyze_sharepoint():
       uniques = {item["content"]: item for item in reversed(final_context_ordered)}
       # Convert back to list
       final_context_ordered_uniques = list(reversed(uniques.values()))
-        
+    
     #If user wants to generate semantic answer must select generate_semantic_answer
     if 'generate_semantic_answer' in body_json and body_json['generate_semantic_answer'] == True:
       #Context are the texts of the elements found
@@ -228,6 +242,8 @@ def analyze_sharepoint():
 
       final_output['semantic_answer'] = generate_answer(body_json['query'], 
                                                         contexts[:10])
+                                                        #contexts[:5])
+
 
     # add site_id and drive_id to final output based on drive_web_url
     for item in final_context_ordered_uniques[:10]:

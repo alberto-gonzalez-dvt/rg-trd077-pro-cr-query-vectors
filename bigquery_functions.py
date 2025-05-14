@@ -22,6 +22,15 @@ def format_biquery_table(site_id,drive_id):
 
   return site_id_bq, drive_id_bq
 
+def format_sharepoint(site_id,drive_id):
+    
+  site_id_sp = 'trsa.sharepoint.com,' + site_id.replace('__',',').replace('_','-')
+  drive_id_sp = drive_id.replace('__','!')
+
+  return site_id_sp, drive_id_sp
+
+
+
 def get_site_id_of_drive_id(drive_id, cache=True):
   job_config = bigquery.QueryJobConfig(use_query_cache=cache)
   query = f"""
@@ -34,14 +43,16 @@ def get_site_id_of_drive_id(drive_id, cache=True):
     query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
 
     #TODO: Tirar error si hay 0 rows o mas de 1
-    df = query_job.to_dataframe()
-    if len(df)==0 or len(df)>1:
+    #df = query_job.to_dataframe()
+    results=query_job.result() 
+    rows = list(results)
+    if len(rows)==0 or len(rows)>1:
       print("ERROR AL INDICAR EL NOMBRE DEL DRIVE URL")
       logging.error(f"Error in drive url name:", exc_info=True)
       raise Exception(f"Error in drive url name:") 
     else:
       #Return site_id of first row
-      for row in query_job:
+      for row in rows:
         return row['site_id']
 
   except Exception as e:
@@ -60,14 +71,16 @@ def get_site_id_of_drive_url(drive_url, cache=True):
     query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
 
     #TODO: Tirar error si hay 0 rows o mas de 1
-    df = query_job.to_dataframe()
-    if len(df)==0 or len(df)>1:
+    #df = query_job.to_dataframe()
+    results=query_job.result()
+    rows = list(results)
+    if len(rows)==0 or len(rows)>1:
       print("ERROR AL INDICAR EL NOMBRE DEL DRIVE URL")
       logging.error(f"Error in drive url name:", exc_info=True)
       raise Exception(f"Error in drive url name")
     else:
       #Return site_id of first row
-      for row in query_job:
+      for row in rows:
         return row['site_id'], row['drive_id']
 
 
@@ -117,12 +130,21 @@ def get_drives_ids_of_site_url(site_url, cache=True):
     logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
     raise Exception(f"Error doing get_site_id_of_drive_id {e}")
 
-def get_mapping(cache=True):
+def get_mapping(drives_to_find, cache=True):
+  drives_to_find_formatted=[]
+  for i in drives_to_find:
+    site_id_bq, drive_id_bq = format_sharepoint(i['site_id'], i['drive_id'])
+    drives_to_find_formatted.append({'site_id':site_id_bq, 'drive_id':drive_id_bq})
+  drive_ids_list = [i['drive_id'] for i in drives_to_find_formatted] 
+  site_ids_list = [i['site_id'] for i in drives_to_find_formatted] 
+  drive_ids=', '.join(f"'{value}'" for value in drive_ids_list)
+  site_ids=', '.join(f"'{value}'" for value in site_ids_list)
+  
   job_config = bigquery.QueryJobConfig(use_query_cache=cache)
-
   query = f"""
   SELECT drive_web_url, site_id, drive_id
   FROM `rg-trd077-pro.configuration_details.sites_and_drives`
+  WHERE site_id IN ({site_ids}) and drive_id IN ({drive_ids}) 
   """
 
   try:
@@ -130,17 +152,69 @@ def get_mapping(cache=True):
     query_result = query_job.result()
     #num_rows = query_result.total_rows
 
-    df = query_job.to_dataframe()
+    #df = query_job.to_dataframe()
     #convert to dict
-    results = df.to_dict(orient="records")
+    #results = df.to_dict(orient="records")
     #make mapping
-    mapping={i['drive_web_url']:{'site_id':i['site_id'], 'library_id':i['drive_id']} for i in results}
+    mapping={i['drive_web_url']:{'site_id':i['site_id'], 'library_id':i['drive_id']} for i in query_result}
     return mapping
   
   except Exception as e:
     logging.error(f"Error doing get_mapping {e}", exc_info=True)
     raise Exception(f"Error doing get_mapping {e}")
 
+def find_non_empty_drives_efficient(drives_to_find, cache):
+    """
+    Finds drives with non-zero rows in BigQuery using a single query.
+
+    Args:
+        project_id: Your Google Cloud project ID.
+        drives_to_find: A list of dictionaries, where each dictionary
+                         has 'site_id' and 'drive_id'.
+
+    Returns:
+        A list of dictionaries from drives_to_find that correspond to
+        tables with more than zero rows.
+    """
+    drives_to_find_formatted=[]
+    for i in drives_to_find:
+      site_id_bq, drive_id_bq = format_biquery_table(i['site_id'], i['drive_id'])
+      drives_to_find_formatted.append({'site_id':site_id_bq, 'drive_id':drive_id_bq})
+    
+    table_identifiers = [
+        f"`{project_id}.{drive['site_id']}.{drive['drive_id']}`"
+        for drive in drives_to_find_formatted
+    ]
+
+    if not table_identifiers:
+        return []
+
+    union_all_query = " UNION ALL ".join(
+        f"SELECT '{drive['site_id']}' AS site_id, '{drive['drive_id']}' AS drive_id, COUNT(*) AS row_count FROM {table_identifier}"
+        for drive, table_identifier in zip(drives_to_find_formatted, table_identifiers)
+    )
+
+    sql = f"""
+    SELECT site_id, drive_id
+    FROM ({union_all_query})
+    WHERE row_count > 0
+    """
+    job_config = bigquery.QueryJobConfig(use_query_cache=cache)
+    query_job = bigqueryClient.query(sql, job_config=job_config)  # Make an API request.
+    results = query_job.result()
+
+    non_empty_drives = []
+    for row in results:
+        non_empty_drives.append(
+            {"site_id": row.site_id, "drive_id": row.drive_id}
+        )
+
+    return [
+        drive
+        for drive in drives_to_find_formatted
+        if {"site_id": drive["site_id"], "drive_id": drive["drive_id"]}
+        in non_empty_drives
+    ]
 
 
 def make_search_query(drives_to_find, search_column, key_words, files_to_filter=None):
@@ -199,6 +273,14 @@ def make_search_query(drives_to_find, search_column, key_words, files_to_filter=
 
 # EDITAMOS LA FUNCIÓN QUE HACE LA QUERY PARA QUE EN FUNCIÓN DEL TAMAÑO DE LA TABLA USE FUERZA BRUTA O ÍNDICE
 def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
+  emb_pregunta =f"""
+      WITH PREGUNTA AS (
+                SELECT ml_generate_embedding_result, content AS query
+                  FROM ML.GENERATE_EMBEDDING(
+                    MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
+                      (SELECT "{text_to_find}" AS content))
+    )
+  """
   if len(drives_to_find)==1:
     num_rows = bigqueryClient.get_table(f"rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}").num_rows
     query_base=f"""
@@ -219,12 +301,7 @@ def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
       FROM VECTOR_SEARCH(
         TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
         , 'embeddings',
-        (
-          SELECT ml_generate_embedding_result, content AS query
-          FROM ML.GENERATE_EMBEDDING(
-            MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
-              (SELECT "{text_to_find}" AS content))
-        ),
+        TABLE PREGUNTA,
         top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
       """
     
@@ -239,7 +316,9 @@ def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
         query=query.replace(f"TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`", f"(SELECT * FROM `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}` WHERE webUrl IN ({files_to_filter}))")
       else:
         query=query_base.replace('{"fraction_lists_to_search":0.1}','{"use_brute_force":true}')
-
+    
+    # Add question embedding 
+    query = emb_pregunta + "\n" + query
       
   else:
     query_parts=[]
@@ -263,12 +342,7 @@ def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
           FROM VECTOR_SEARCH(
             TABLE `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
             , 'embeddings',
-            (
-              SELECT ml_generate_embedding_result, content AS query
-              FROM ML.GENERATE_EMBEDDING(
-                MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
-                  (SELECT "{text_to_find}" AS content))
-            ),
+            TABLE PREGUNTA,
             top_k => 50, distance_type => 'EUCLIDEAN', options => '{{"fraction_lists_to_search":0.1}}')
           """
       if num_rows >= 150000:
@@ -288,7 +362,8 @@ def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
         query_parts.append(single_query)
 
     #Unify queries  
-    query="\nUNION ALL\n".join(query_parts)
+    query_0="\nUNION ALL\n".join(query_parts)
+    query = emb_pregunta + "\n" + query_0
 
   return query
 
@@ -362,6 +437,7 @@ def bigquery_search_request(drives_to_find, search_column, key_words, files_to_f
 
         nears_list.append(output_object)
     else:
+      nears_list=[]
       # Fetch results as an Arrow table
       table = query_job.to_arrow()
       # Convert to Pandas DataFrame
@@ -370,6 +446,13 @@ def bigquery_search_request(drives_to_find, search_column, key_words, files_to_f
       df = df.map(lambda x: x.isoformat() if isinstance(x, datetime) else x) # Convert TimeStamps to string
       #convert to dict
       nears_list = df.to_dict(orient="records")
+      # Get the column names from the Arrow schema
+      #column_names = table.schema.names
+      # Iterate over the rows in the Arrow table
+      #for row in table.to_pylist():
+        # Create a dictionary for each row, mapping column names to values
+        #row_dict = dict(zip(column_names, row))
+        #nears_list.append(row_dict)
       # Define a mapping of original column names to new names
       column_mapping = {
         "text": "content",
