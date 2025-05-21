@@ -9,7 +9,7 @@ import time
 #available models --> https://cloud.google.com/generative-ai-app-builder/docs/ranking#rank_or_rerank_a_set_of_records_according_to_a_query
 reranker = VertexAIRank(project_id="rg-trd077-pro",
                           location_id="europe-west1",
-                          model="semantic-ranker-512-003", #"semantic-ranker-512-003", #"semantic-ranker-default-004"
+                          model="semantic-ranker-default-004", #"semantic-ranker-512-003", #"semantic-ranker-default-004"
                           ranking_config="default_ranking_config",
                           title_field="source",
                           top_n=30,
