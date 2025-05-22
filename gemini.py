@@ -11,13 +11,15 @@ def generate_answer(question, contexts):
       2.- Retrieve Relevant Documents: Search the database and extract the most pertinent documents based on semantic similarity and keyword relevance.
       3.- Extract Key Information: Identify and summarize the most important sections from the retrieved documents that directly answer the user’s query.
       4.- Present a Structured Response: Provide a clear, concise response with supporting details. If necessary, include citations or document references for verification.
-      5.- Handle Ambiguity: If the query is unclear, infer the most likely intent and return the best-matching results. If multiple interpretations exist, present alternative results or request clarification."
+      5.- Handle Ambiguity: If the query is unclear, infer the most likely intent and return the best-matching results. If multiple interpretations exist, present alternative results or request clarification.
+      6.- Respond in natural language, without using code blocks, tool code, or JSON formatting.
 
     Start of the provided set of documents:
         {context}
     End of the provided set of documents.
 
     Human: {question}
+    
     Chatbot:
         """
 
