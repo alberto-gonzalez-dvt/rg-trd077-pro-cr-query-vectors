@@ -13,7 +13,11 @@ import google.cloud.logging
 client_logging = google.cloud.logging.Client()
 client_logging.setup_logging()
 
+# Get env vars
 project_id = os.environ.get('project_id')
+enterprise_reservation_name = os.environ.get('enterprise_reservation_name')
+enterprise_reservation_location = os.environ.get('reservation_location')
+enterprise_reservation_path = f'projects/{project_id}/locations/{enterprise_reservation_location}/reservations/{enterprise_reservation_name}'
 
 def format_biquery_table(site_id,drive_id):
     
@@ -277,7 +281,7 @@ def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
       WITH PREGUNTA AS (
                 SELECT ml_generate_embedding_result, content AS query
                   FROM ML.GENERATE_EMBEDDING(
-                    MODEL `bcadf53e_9768_4234_9e07_f706d718f12b__dd4ef53e_f365_4da7_aebb_14a52138466d.embedding_model`,
+                    MODEL `configuration_details.embedding_model`,
                       (SELECT "{text_to_find}" AS content))
     )
   """
@@ -489,7 +493,9 @@ def bigquery_vector_request(drives_to_find, text_to_find, files_to_filter=None, 
 
 
   query = make_vector_search_query(drives_to_find_formatted,text_to_find, files_to_filter)
-  job_config = bigquery.QueryJobConfig(use_query_cache=cache)
+  job_config = bigquery.QueryJobConfig(use_query_cache=cache,
+                                       reservation= enterprise_reservation_path, #asign reservation to use with queries
+                                       use_legacy_sql=False,)
 
   try:
     query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query

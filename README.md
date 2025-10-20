@@ -31,6 +31,6 @@ gcloud run deploy rg-trd077-pro-cr-query-vectors \
 --timeout=90 \
 --concurrency=1 \
 --service-account=id-rg-trd077-pro-cloud-functio@rg-trd077-pro.iam.gserviceaccount.com \
---set-env-vars "project_id=rg-trd077-pro"
+--set-env-vars "project_id=rg-trd077-pro,enterprise_reservation_name=mini-reservation-size,reservation_location=europe-west1"
 
 ```
