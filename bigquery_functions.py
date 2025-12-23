@@ -26,15 +26,6 @@ def format_biquery_table(site_id,drive_id):
 
   return site_id_bq, drive_id_bq
 
-def format_sharepoint(site_id,drive_id):
-    
-  site_id_sp = 'trsa.sharepoint.com,' + site_id.replace('__',',').replace('_','-')
-  drive_id_sp = drive_id.replace('__','!')
-
-  return site_id_sp, drive_id_sp
-
-
-
 def get_site_id_of_drive_id(drive_id, cache=True):
   job_config = bigquery.QueryJobConfig(use_query_cache=cache)
   query = f"""
@@ -134,38 +125,6 @@ def get_drives_ids_of_site_url(site_url, cache=True):
     logging.error(f"Error doing get_site_id_of_drive_id {e}", exc_info=True)
     raise Exception(f"Error doing get_site_id_of_drive_id {e}")
 
-def get_mapping(drives_to_find, cache=True):
-  drives_to_find_formatted=[]
-  for i in drives_to_find:
-    site_id_bq, drive_id_bq = format_sharepoint(i['site_id'], i['drive_id'])
-    drives_to_find_formatted.append({'site_id':site_id_bq, 'drive_id':drive_id_bq})
-  drive_ids_list = [i['drive_id'] for i in drives_to_find_formatted] 
-  site_ids_list = [i['site_id'] for i in drives_to_find_formatted] 
-  drive_ids=', '.join(f"'{value}'" for value in drive_ids_list)
-  site_ids=', '.join(f"'{value}'" for value in site_ids_list)
-  
-  job_config = bigquery.QueryJobConfig(use_query_cache=cache)
-  query = f"""
-  SELECT drive_web_url, site_id, drive_id
-  FROM `rg-trd077-pro.configuration_details.sites_and_drives`
-  WHERE site_id IN ({site_ids}) and drive_id IN ({drive_ids}) 
-  """
-
-  try:
-    query_job = bigqueryClient.query(query, job_config=job_config)  # Execute the query
-    query_result = query_job.result()
-    #num_rows = query_result.total_rows
-
-    #df = query_job.to_dataframe()
-    #convert to dict
-    #results = df.to_dict(orient="records")
-    #make mapping
-    mapping={i['drive_web_url']:{'site_id':i['site_id'], 'library_id':i['drive_id']} for i in query_result}
-    return mapping
-  
-  except Exception as e:
-    logging.error(f"Error doing get_mapping {e}", exc_info=True)
-    raise Exception(f"Error doing get_mapping {e}")
 
 def find_non_empty_drives_efficient(drives_to_find, cache):
     """
@@ -230,12 +189,15 @@ def make_search_query(drives_to_find, search_column, key_words, files_to_filter=
         sp_file_extension,
         webUrl,
         drive_name,
+        drive_id,
         trace_timestamp,
         sp_file_size,
+        sp_file_creator_name,
         file_id,
         drive_path,
         sp_file_created_date_time,
-        sp_file_last_modified_date_time
+        sp_file_last_modified_date_time,
+        sp_column_metadata
       FROM `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
       WHERE SEARCH({search_column}, r"{key_words}", analyzer=>'LOG_ANALYZER')
       """
@@ -254,12 +216,15 @@ def make_search_query(drives_to_find, search_column, key_words, files_to_filter=
           sp_file_extension,
           webUrl,
           drive_name,
+          drive_id,
           trace_timestamp,
           sp_file_size,
+          sp_file_creator_name,
           file_id,
           drive_path,
           sp_file_created_date_time,
-          sp_file_last_modified_date_time
+          sp_file_last_modified_date_time,
+          sp_column_metadata
         FROM `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
         WHERE SEARCH({search_column}, r"{key_words}", analyzer=>'LOG_ANALYZER')
       """
@@ -295,12 +260,15 @@ def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
         base.webUrl,
         base.file_name,
         base.drive_name,
+        base.drive_id,
         base.trace_timestamp,
         base.sp_file_size,
+        base.sp_file_creator_name,
         base.file_id,
         base.drive_path,
         base.sp_file_created_date_time,
         base.sp_file_last_modified_date_time,
+        base.sp_column_metadata,
         distance
       FROM VECTOR_SEARCH(
         TABLE `rg-trd077-pro.{drives_to_find[0]['site_id']}.{drives_to_find[0]['drive_id']}`
@@ -336,12 +304,15 @@ def make_vector_search_query(drives_to_find,text_to_find, files_to_filter=None):
             base.webUrl,
             base.file_name,
             base.drive_name,
+            base.drive_id,
             base.trace_timestamp,
             base.sp_file_size,
+            base.sp_file_creator_name,
             base.file_id,
             base.drive_path,
             base.sp_file_created_date_time,
             base.sp_file_last_modified_date_time,
+            base.sp_column_metadata,
             distance
           FROM VECTOR_SEARCH(
             TABLE `rg-trd077-pro.{i['site_id']}.{i['drive_id']}`
@@ -426,7 +397,7 @@ def bigquery_search_request(drives_to_find, search_column, key_words, files_to_f
         output_object['file_extension'] = row['sp_file_extension']
         output_object['file_url'] = row['webUrl']
         output_object['file_name'] = row['file_name']
-        #output_object['library_id'] = drive_id
+        output_object['drive_id'] = row['drive_id']
         #output_object['site_id'] = site_id
         output_object['library_name'] = row['drive_name']
         output_object['library_upload_date']= row['trace_timestamp']
@@ -511,7 +482,7 @@ def bigquery_vector_request(drives_to_find, text_to_find, files_to_filter=None, 
       output_object['file_extension'] = row['sp_file_extension']
       output_object['file_url'] = row['webUrl']
       output_object['file_name'] = row['file_name']
-      #output_object['library_id'] = drive_id
+      output_object['drive_id'] = row['drive_id']
       #output_object['site_id'] = site_id
       output_object['library_name'] = row['drive_name']
       output_object['library_upload_date']= row['trace_timestamp']

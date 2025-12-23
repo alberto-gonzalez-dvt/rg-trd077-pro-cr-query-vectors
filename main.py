@@ -1,4 +1,4 @@
-from bigquery_functions import get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url, get_mapping, find_non_empty_drives_efficient
+from bigquery_functions import get_site_id_of_drive_id, get_site_id_of_drive_url, get_drives_ids_of_site_id, get_drives_ids_of_site_url, find_non_empty_drives_efficient
 from gemini import generate_answer, generate_keywords_and_weights
 from utils import do_search_type_text, do_search_type_vector 
 from concurrent.futures import ThreadPoolExecutor
@@ -97,14 +97,16 @@ def analyze_sharepoint():
         for drive_item in drives_list:
           drives_to_find.append({ 'site_id':drive_item['site_id'], 'drive_id': drive_item['drive_id'] })
     
+    # Mapping to add sharepoint site_id to final output
+    mapping = {}
+    for i in drives_to_find:
+      mapping[i['drive_id']] = {'site_id': i['site_id']}
+    
     # If len(drives_to_find)=0 (i.e., user choose the drive to search), we assume it is non empty
     if len(drives_to_find) > 1:
       non_empty_drives_to_find = find_non_empty_drives_efficient(drives_to_find, cache=cache)
     else:
       non_empty_drives_to_find = drives_to_find
-    
-    # Mapping to add site_id and drive_id to final output
-    mapping=get_mapping(non_empty_drives_to_find, cache=cache)
     
     # FINAL OUTPUT
     final_output = {}
@@ -247,7 +249,7 @@ def analyze_sharepoint():
 
     # add site_id and drive_id to final output based on drive_web_url
     for item in final_context_ordered_uniques[:10]:
-      name = item.get('library_url')
+      name = item.get('drive_id')
       if name in mapping:
         item.update(mapping[name])
 
