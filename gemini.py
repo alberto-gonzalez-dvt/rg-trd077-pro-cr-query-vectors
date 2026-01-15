@@ -1,7 +1,40 @@
-from langchain.prompts import PromptTemplate, ChatPromptTemplate
-from langchain_google_vertexai import ChatVertexAI
+import os
+from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import StrOutputParser
-from langchain_google_vertexai import HarmBlockThreshold, HarmCategory
+from langchain_google_genai import HarmBlockThreshold, HarmCategory
+
+# Get env vars
+project_id = os.environ.get('project_id')
+gemini_location = os.environ.get('reservation_location')
+response_gemini_model= os.environ.get("response_gemini_model")
+keywords_gemini_model = os.environ.get("keywords_gemini_model")
+
+def init_llm_model(project_id, location, response_gemini_model, temperature, thinking_budget, safety_settings):
+    """Init LLM model with its configuration for generation content. Always use vertexai=True to go through Vertex AI service.
+
+    Args:
+        project_id (str): project ID to use
+        location (str): Gemini endpoint location
+        response_gemini_model (_typstre_): gemini version to use
+        temperature (float): temperature setting for generating content
+        thinking_budget (int): number of tokens to be used when reasoning. 0 = OFF, -1 = dinamyc,  n = number of tokens to use
+        safety_settings (dict): level of security and block for differents categories
+
+    Returns:
+        ChatGoogleGenerativeAI: langchain class of our LLM to be used
+    """
+    llm = ChatGoogleGenerativeAI(
+        project=project_id,
+        location=location,
+        vertexai=True,
+        model=response_gemini_model,
+        temperature=temperature,
+        thinking_budget=thinking_budget,
+        safety_settings = safety_settings,
+        )
+
+    return llm
 
 def generate_answer(question, contexts):
 
@@ -28,20 +61,24 @@ def generate_answer(question, contexts):
     template=prompt_template
   )
 
-  llm = ChatVertexAI(
-    model="gemini-2.0-flash-001", #"gemini-2.0-flash-lite-001" #"gemini-1.5-flash-001" #gemini-2.0-flash-001
-    temperature=0,
-    safety_settings = {
-  HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-  HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-  HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-  HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-}
-  )
+  # Init LLM model
+  llm = init_llm_model(project_id=project_id, 
+                          location=gemini_location, 
+                          response_gemini_model=response_gemini_model, 
+                          temperature=0, 
+                          thinking_budget=0, 
+                          safety_settings={
+                            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                            }
+                        )
 
   #Build context form list
   all_context = "\n".join([f'"{context}"' for context in contexts])
 
+  # Build chain and run infer
   chain = prompt | llm | StrOutputParser()
   res = chain.invoke(input={"context": all_context, "question": question})
 
@@ -59,7 +96,7 @@ def generate_KeyWords(question):
 
   json_schema = {
       "title": "keyword_extraction",
-      "description": "Extracts the most relevant keywords from a given text.",# and determines whether hybrid search is needed.",
+      "description": "Extracts the most relevant keywords from a given text.",
       "type": "object",
       "properties": {
           "key_words": {
@@ -97,17 +134,21 @@ def generate_KeyWords(question):
         """
   )   
 
-  llm = ChatVertexAI(
-    model="gemini-2.0-flash-lite-001",
-    temperature=0,
-    safety_settings = {
-      HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-      HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-      HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-      HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    }
-  )
+  # Init LLM model
+  llm = init_llm_model(project_id=project_id, 
+                        location=gemini_location, 
+                        response_gemini_model=keywords_gemini_model, 
+                        temperature=0, 
+                        thinking_budget=0, 
+                        safety_settings={
+                            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                            }
+                        )
 
+  # Build chain and run infer
   structured_llm = llm.with_structured_output(json_schema, method="json_mode")
   chain_keyword_structured = prompt | structured_llm
 
@@ -213,17 +254,21 @@ Output:
 
   prompt = ChatPromptTemplate.from_template(prompt_template)
 
-  llm = ChatVertexAI(
-      model="gemini-2.0-flash-lite-001",
-      temperature=0,
-      safety_settings = {
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-  }
-    )
+  # Init LLM model
+  llm = init_llm_model(project_id=project_id, 
+                        location=gemini_location, 
+                        response_gemini_model=keywords_gemini_model, 
+                        temperature=0, 
+                        thinking_budget=0, 
+                        safety_settings={
+                            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                            }
+                        )
 
+  # Build chain and run infer
   structured_llm = llm.with_structured_output(json_schema, method="json_mode")
   chain_structured = prompt | structured_llm
   res = chain_structured.invoke(input={"query": question})

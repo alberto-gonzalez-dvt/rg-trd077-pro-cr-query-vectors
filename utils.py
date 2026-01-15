@@ -1,5 +1,5 @@
 from rank_bm25 import BM25Okapi
-from langchain.schema import Document
+from langchain_core.documents import Document
 from gemini import generate_KeyWords
 from bigquery_functions import bigquery_search_request, bigquery_vector_request
 from langchain_google_community.vertex_rank import VertexAIRank
