@@ -49,7 +49,7 @@ def order_search_result(search_result, gemini_keywords, num_results): #
                                          "score": float(bm25_scores[i]),
                                          "file_extension": search_result[i]["file_extension"],
                                          "file_url": search_result[i]["file_url"],
-                                         'drive_id': i["drive_id"],
+                                         'drive_id': search_result[i]["drive_id"],
                                          #'site_id': search_result[i]["site_id"],
                                          'user_id': search_result[i]["user_id"],
                                          'library_name': search_result[i]["library_name"],
@@ -90,7 +90,7 @@ def do_search_type_text(drives_to_find, text_to_find, search_column, user_id, ke
   if len(key_word_search)!=0:
     if len(key_word_search)>50:
       # Use rankbm25 to associate scores and order SEARCH results. Return the best 100 results
-      search_results_ordered = order_search_result(search_result=key_word_search, gemini_keywords=key_words,#key_words['key_words'], 
+      search_results_ordered = order_search_result(search_result=key_word_search, gemini_keywords=key_words, 
                                                      num_results=50)
     else:
       search_results_ordered = [Document(page_content=i["content"],
